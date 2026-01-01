@@ -2,6 +2,7 @@
 Products management page for admin view
 """
 import customtkinter as ctk
+import tkinter as tk
 from tkinter import messagebox
 from config import COLORS, CURRENCY_SYMBOL
 
@@ -14,9 +15,22 @@ class ProductsPage:
         self.selected_category = None
         self.category_search_var = None
         self.product_search_var = None
+        self.category_search_var = None
+        self.product_search_var = None
+        self.context_category = None
+        self.category_menu = None
     
     def show(self):
         """Show products management page with category folders"""
+        
+        # Re-create context menu (as it gets destroyed during page switches)
+        self.category_menu = tk.Menu(self.parent, tearoff=0, font=("Inter", 10))
+        self.category_menu.add_command(label="Mark as Item", command=self.mark_as_item)
+        self.category_menu.add_command(label="Mark as Ingredient", command=self.mark_as_ingredient)
+        self.category_menu.add_separator()
+        self.category_menu.add_command(label="Rename Category", command=self.rename_category_dialog)
+        self.category_menu.add_command(label="Delete Category", command=self.delete_context_category)
+
         # Header
         header = ctk.CTkFrame(self.parent, fg_color="transparent")
         header.pack(fill="x", padx=30, pady=(30, 20))
@@ -136,18 +150,6 @@ class ProductsPage:
             corner_radius=10
         )
         
-        # Delete Category Button
-        self.delete_category_btn = ctk.CTkButton(
-            self.products_header_frame,
-            text="🗑️ Delete",
-            command=self.delete_current_category,
-            height=35,
-            width=90,
-            font=ctk.CTkFont(size=12, weight="bold"),
-            fg_color=COLORS["danger"],
-            hover_color="#c0392b",
-            corner_radius=10
-        )
         
         # Hide/Unhide Category Button
         self.hide_category_btn = ctk.CTkButton(
@@ -223,7 +225,7 @@ class ProductsPage:
             is_hidden = category_map[category]
             
             # Visual cue
-            prefix = "👁️‍🗨️" if is_hidden else "📁"
+            prefix = "🧪" if is_hidden else "📁"
             text_color = COLORS["text_secondary"] if is_hidden else COLORS["text_primary"]
             
             cat_btn = ctk.CTkButton(
@@ -239,23 +241,110 @@ class ProductsPage:
                 anchor="w"
             )
             cat_btn.pack(fill="x", pady=5)
+            
+            # Right-click context menu
+            cat_btn.bind("<Button-3>", lambda e, c=category: self.show_category_menu(e, c))
     
+    def show_category_menu(self, event, category):
+        """Show context menu for a category"""
+        if category is None: return
+        self.context_category = category
+        self.category_menu.post(event.x_root, event.y_root)
+
+    def mark_as_item(self):
+        """Mark specific category as Item (visible in POS)"""
+        cat_name = getattr(self, 'context_category', None) or self.selected_category
+        if not cat_name: return
+        
+        cat_data = self.database.get_category_by_name(cat_name)
+        if cat_data:
+            self.database.toggle_category_visibility(cat_data[0], False) # Unhide
+            messagebox.showinfo("Success", f"'{cat_name}' is now marked as Item (visible in POS).")
+            self.load_categories()
+            if self.selected_category == cat_name:
+                self.select_category(cat_name)
+
+    def rename_category_dialog(self):
+        """Show dialog to rename the right-clicked category"""
+        cat_name = getattr(self, 'context_category', None)
+        if not cat_name: return
+        
+        dialog = ctk.CTkToplevel(self.parent)
+        dialog.title("Rename Category")
+        dialog.geometry("300x180")
+        dialog.transient(self.parent)
+        dialog.grab_set()
+        
+        # Center
+        dialog.update_idletasks()
+        try:
+            x = (dialog.winfo_screenwidth() - 300) // 2
+            y = (dialog.winfo_screenheight() - 180) // 2
+            dialog.geometry(f"+{x}+{y}")
+        except: pass
+        
+        ctk.CTkLabel(dialog, text=f"Rename '{cat_name}' to:", font=ctk.CTkFont(weight="bold")).pack(pady=(20, 10))
+        
+        entry = ctk.CTkEntry(dialog)
+        entry.pack(pady=5, padx=20, fill="x")
+        entry.insert(0, cat_name)
+        entry.focus_set()
+        
+        def save():
+            new_name = entry.get().strip()
+            if not new_name: return
+            
+            if new_name == cat_name:
+                dialog.destroy()
+                return
+                
+            # Check exist
+            if self.database.get_category_by_name(new_name):
+                messagebox.showerror("Error", "Category already exists")
+                return
+                
+            if self.database.rename_category(cat_name, new_name):
+                dialog.destroy()
+                self.load_categories()
+                
+                # If currently selected, update selection
+                if self.selected_category == cat_name:
+                    self.select_category(new_name)
+                elif self.selected_category is None:
+                    # Refresh "All Products" view to update category names
+                    self.select_category(None)
+            else:
+                messagebox.showerror("Error", "Failed to rename category")
+                
+        ctk.CTkButton(dialog, text="Save", command=save, fg_color=COLORS["success"]).pack(pady=20)
+        entry.bind("<Return>", lambda e: save())
+        self.context_category = None
+
+    def mark_as_ingredient(self):
+        """Mark specific category as Ingredient (hidden from POS)"""
+        cat_name = getattr(self, 'context_category', None) or self.selected_category
+        if not cat_name: return
+        
+        cat_data = self.database.get_category_by_name(cat_name)
+        if cat_data:
+            self.database.toggle_category_visibility(cat_data[0], True) # Hide
+            messagebox.showinfo("Success", f"'{cat_name}' is now marked as Ingredient (hidden from POS).")
+            self.load_categories()
+            if self.selected_category == cat_name:
+                self.select_category(cat_name)
+        self.context_category = None
+
     def toggle_category_visibility(self):
         """Toggle the visibility of the current category"""
         if not self.selected_category: return
         
         cat_data = self.database.get_category_by_name(self.selected_category)
         if cat_data:
-            cat_id = cat_data[0]
             current_hidden = cat_data[2] if len(cat_data) > 2 else 0
-            new_hidden = not current_hidden
-            
-            self.database.toggle_category_visibility(cat_id, new_hidden)
-            
-            # Update UI
-            status = "Hidden" if new_hidden else "Visible"
-            messagebox.showinfo("Success", f"Category is now {status} to cashiers.")
-            self.select_category(self.selected_category) # Refresh state
+            if current_hidden:
+                self.mark_as_item()
+            else:
+                self.mark_as_ingredient()
 
     def delete_current_category(self):
         """Delete the current category and its contents"""
@@ -270,6 +359,25 @@ class ProductsPage:
                 self.select_category(None) # Go back to All Products
             else:
                  messagebox.showerror("Error", "Category not found in registry.")
+
+    def delete_context_category(self):
+        """Delete category from context menu"""
+        cat_name = getattr(self, 'context_category', None) or self.selected_category
+        if not cat_name: return
+        
+        msg = f"WARNING: This will delete the category '{cat_name}' AND ALL PRODUCTS inside it.\n\nThis action cannot be undone.\n\nAre you sure?"
+        if messagebox.askyesno("Delete Category", msg, icon='warning'):
+            cat_data = self.database.get_category_by_name(cat_name)
+            if cat_data:
+                self.database.delete_category(cat_data[0])
+                messagebox.showinfo("Success", "Category and products deleted.")
+                self.load_categories()
+                # If we deleted the selected category, go back to All Products
+                if self.selected_category == cat_name:
+                    self.select_category(None)
+            else:
+                messagebox.showerror("Error", "Category not found in registry.")
+        self.context_category = None
 
     def select_category(self, category):
         """Select a category and show its products"""
@@ -289,26 +397,25 @@ class ProductsPage:
             if cat_data and len(cat_data) > 2:
                 is_hidden = cat_data[2]
             
-            status_text = " (Hidden)" if is_hidden else ""
-            self.selected_category_label.configure(text=f"📁 {category}{status_text}")
+            status_text = " (Ingredient)" if is_hidden else ""
+            icon = "🧪" if is_hidden else "📁"
+            self.selected_category_label.configure(text=f"{icon} {category}{status_text}")
             
             # Configure Hide button appearance
             if is_hidden:
-                self.hide_category_btn.configure(text="👁️ Unhide", fg_color=COLORS["success"], hover_color="#27ae60")
+                self.hide_category_btn.configure(text="Mark as Item", fg_color=COLORS["success"], hover_color="#27ae60")
             else:
-                self.hide_category_btn.configure(text="👁️ Hide", fg_color=COLORS["warning"], hover_color="#f39c12")
+                self.hide_category_btn.configure(text="Mark as Ingredient", fg_color=COLORS["warning"], hover_color="#f39c12")
             
             # Show buttons (Right to Left packing order)
             self.add_product_btn.pack(side="right", padx=5)
             self.hide_category_btn.pack(side="right", padx=5)
-            self.delete_category_btn.pack(side="right", padx=5)
             
         else:
             self.selected_category_label.configure(text="📦 All Products")
             # Hide all category-specific buttons
             self.add_product_btn.pack_forget()
             self.hide_category_btn.pack_forget()
-            self.delete_category_btn.pack_forget()
         
         # Load products for this category
         self.load_products_for_category(category)
@@ -385,11 +492,34 @@ class ProductsPage:
         right_frame = ctk.CTkFrame(card, fg_color="transparent")
         right_frame.pack(side="right", fill="y", padx=8, pady=4)
         
-        # Stock with Unit
-        stock_val = product[4]
-        unit_val = product[8] if len(product) > 8 and product[8] else "pcs"
-        stock_text = f"Stock: {stock_val} {unit_val}"
-        stock_color = COLORS["danger"] if stock_val < 10 else COLORS["text_secondary"]
+        # Stock with Unit OR Availability Status
+        # Indices: use_stock_tracking=12, is_available=13
+        
+        # Safely get flags with defaults
+        use_stock_tracking = 1
+        if len(product) > 12 and product[12] is not None:
+            try: use_stock_tracking = int(product[12])
+            except: use_stock_tracking = 1
+            
+        is_available = 1
+        if len(product) > 13 and product[13] is not None:
+            try: is_available = int(product[13])
+            except: is_available = 1
+        
+        if use_stock_tracking == 0:
+            # Availability mode - show availability status
+            if is_available:
+                stock_text = "✓ Available"
+                stock_color = COLORS["success"]
+            else:
+                stock_text = "✗ Not Available"
+                stock_color = COLORS["danger"]
+        else:
+            # Stock tracking mode - show stock count
+            stock_val = product[4]
+            unit_val = product[8] if len(product) > 8 and product[8] else "pcs"
+            stock_text = f"Stock: {stock_val} {unit_val}"
+            stock_color = COLORS["danger"] if stock_val < 10 else COLORS["text_secondary"]
         
         stock_label = ctk.CTkLabel(
              right_frame, 
@@ -741,13 +871,71 @@ class ProductsPage:
         markup_entry.bind("<KeyRelease>", calculate_price_from_markup)
         price_entry.bind("<KeyRelease>", calculate_markup_from_price)
         
-        # Row 4: Stock and Unit
-        ctk.CTkLabel(form_frame, text="Stock *", font=ctk.CTkFont(size=10, weight="bold")).grid(row=row, column=0, sticky="w", padx=12, pady=(4, 2))
+        # Row 4: Stock Tracking Mode Checkbox
+        stock_mode_frame = ctk.CTkFrame(form_frame, fg_color="transparent")
+        stock_mode_frame.grid(row=row, column=0, columnspan=2, sticky="w", padx=12, pady=(8, 2))
+        
+        use_stock_var = ctk.IntVar(value=1)  # 1 = Use stock tracking, 0 = Use availability
+        stock_mode_check = ctk.CTkCheckBox(
+            stock_mode_frame,
+            text="Use Stock Tracking",
+            variable=use_stock_var,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            checkbox_width=20,
+            checkbox_height=20
+        )
+        stock_mode_check.pack(side="left")
+        
+        ctk.CTkLabel(
+            stock_mode_frame,
+            text="(Uncheck for made-to-order items like Burgers)",
+            font=ctk.CTkFont(size=9),
+            text_color=COLORS["text_secondary"]
+        ).pack(side="left", padx=(8, 0))
+        row += 1
+        
+        # Row 5: Stock/Availability and Unit
+        stock_label = ctk.CTkLabel(form_frame, text="Stock *", font=ctk.CTkFont(size=10, weight="bold"))
+        stock_label.grid(row=row, column=0, sticky="w", padx=12, pady=(4, 2))
         ctk.CTkLabel(form_frame, text="Unit", font=ctk.CTkFont(size=10, weight="bold")).grid(row=row, column=1, sticky="w", padx=12, pady=(4, 2))
         row += 1
         
+        # Stock entry (for stock tracking mode)
         stock_entry = ctk.CTkEntry(form_frame, height=28, font=ctk.CTkFont(size=12), placeholder_text="0")
         stock_entry.grid(row=row, column=0, sticky="ew", padx=(12, 6), pady=(0, 8))
+        
+        # Availability switch (for availability mode)
+        availability_var = ctk.IntVar(value=1)  # 1 = Available, 0 = Not Available
+        availability_frame = ctk.CTkFrame(form_frame, fg_color="transparent")
+        
+        availability_switch = ctk.CTkSwitch(
+            availability_frame,
+            text="Available",
+            variable=availability_var,
+            font=ctk.CTkFont(size=12),
+            switch_width=50,
+            switch_height=25
+        )
+        availability_switch.pack(anchor="w", pady=4)
+        
+        # Store the row for toggling
+        stock_row = row
+        
+        # Toggle between stock entry and availability switch
+        def toggle_stock_mode():
+            if use_stock_var.get() == 1:
+                # Stock tracking mode
+                stock_label.configure(text="Stock *")
+                availability_frame.grid_forget()
+                stock_entry.grid(row=stock_row, column=0, sticky="ew", padx=(12, 6), pady=(0, 8))
+            else:
+                # Availability mode
+                stock_label.configure(text="Availability")
+                stock_entry.grid_forget()
+                availability_frame.grid(row=stock_row, column=0, sticky="ew", padx=(12, 6), pady=(0, 8))
+        
+        stock_mode_check.configure(command=toggle_stock_mode)
+
         
         unit_row = row
         unit_var = ctk.StringVar(value="pcs")
@@ -771,6 +959,7 @@ class ProductsPage:
             unit_dropdown.grid(row=unit_row, column=1, sticky="ew", padx=(6, 12), pady=(0, 8))
         custom_unit_entry.bind("<Escape>", lambda e: show_unit_dropdown())
         row += 1
+
         
         # Row 5: Supplier (New Field)
         ctk.CTkLabel(form_frame, text="Supplier", font=ctk.CTkFont(size=10, weight="bold")).grid(row=row, column=0, columnspan=2, sticky="w", padx=12, pady=(4, 2))
@@ -822,7 +1011,13 @@ class ProductsPage:
         
         def save_product(close_after=True):
             category = default_category if default_category else category_entry.get()
-            if not name_entry.get().strip(): messagebox.showerror("Error", "Name required"); name_entry.focus(); return None
+            if not name_entry.get().strip(): 
+                messagebox.showerror("Error", "Name required")
+                try:
+                    name_entry.focus()
+                except:
+                    pass
+                return None
             if not category.strip(): messagebox.showerror("Error", "Category required"); return None
             
             try:
@@ -844,10 +1039,20 @@ class ProductsPage:
                 cost_val = float(cost_entry.get() or 0)
                 markup_val = float(markup_entry.get() or 0)
                 
+                # Handle stock tracking mode
+                use_stock_tracking = use_stock_var.get()
+                if use_stock_tracking:
+                    stock_val = int(stock_entry.get() or 0)
+                    is_available = 1  # Always available if using stock tracking
+                else:
+                    stock_val = 0  # No stock tracking
+                    is_available = availability_var.get()
+                
                 product_id = self.database.add_product(
                     name_entry.get().strip(), category.strip(), float(price_entry.get() or 0),
-                    int(stock_entry.get() or 0), barcode_entry.get().strip() or None, desc_entry.get().strip() or None,
-                    unit, cost_val, markup_val, supplier_id=supp_id
+                    stock_val, barcode_entry.get().strip() or None, desc_entry.get().strip() or None,
+                    unit, cost_val, markup_val, supplier_id=supp_id,
+                    use_stock_tracking=use_stock_tracking, is_available=is_available
                 )
                 
                 full_desc = desc_entry.get().strip() or ""
@@ -856,9 +1061,10 @@ class ProductsPage:
                 if full_desc != desc_entry.get().strip():
                     self.database.update_product(
                         product_id, name_entry.get().strip(), category.strip(),
-                        float(price_entry.get() or 0), int(stock_entry.get() or 0),
+                        float(price_entry.get() or 0), stock_val,
                         barcode_entry.get().strip() or None, full_desc,
-                        unit, cost_val, markup_val, supplier_id=supp_id
+                        unit, cost_val, markup_val, supplier_id=supp_id,
+                        use_stock_tracking=use_stock_tracking, is_available=is_available
                     )
                 
                 if close_after:
@@ -870,6 +1076,7 @@ class ProductsPage:
                 return product_id
             except Exception as e:
                 messagebox.showerror("Error", f"Failed: {str(e)}"); return None
+
         
         def handle_enter(event): save_product(close_after=False); return "break"
             
@@ -890,7 +1097,7 @@ class ProductsPage:
         screen_height = dialog.winfo_screenheight()
         
         width = 620
-        height = min(800, int(screen_height * 0.9))
+        height = min(900, int(screen_height * 0.9))
         
         x = (screen_width - width) // 2
         y = (screen_height - height) // 2
@@ -960,10 +1167,25 @@ class ProductsPage:
         ctk.CTkLabel(price_frame, text="Price *", font=ctk.CTkFont(size=10, weight="bold")).grid(row=0, column=2, sticky="w", padx=0, pady=(0, 2))
         
         current_price = product[3]
-        if len(product) > 10:
-            current_cost = product[9] if product[9] > 0 else current_price
-            current_markup = product[10]
-        else:
+        # Safely extract cost and markup with proper error handling
+        # Product tuple: [id, name, category, price, stock, barcode, description, created_at, unit, cost, markup, supplier_id, use_stock_tracking, is_available]
+        try:
+            if len(product) > 10:
+                # Try to get cost from index 9
+                try:
+                    current_cost = float(product[9]) if product[9] and float(product[9]) > 0 else current_price
+                except (ValueError, TypeError):
+                    current_cost = current_price
+                
+                # Try to get markup from index 10
+                try:
+                    current_markup = float(product[10]) if product[10] is not None else 0.0
+                except (ValueError, TypeError):
+                    current_markup = 0.0
+            else:
+                current_cost = current_price
+                current_markup = 0.0
+        except Exception:
             current_cost = current_price
             current_markup = 0.0
         
@@ -1009,16 +1231,82 @@ class ProductsPage:
         markup_entry.bind("<KeyRelease>", calculate_price_from_markup)
         price_entry.bind("<KeyRelease>", calculate_markup_from_price)
         
-        # Row 4: Stock and Unit
+        # Row 4: Stock Tracking Mode Checkbox
+        stock_mode_frame = ctk.CTkFrame(form_frame, fg_color="transparent")
+        stock_mode_frame.grid(row=row, column=0, columnspan=2, sticky="w", padx=12, pady=(8, 2))
+        
+        # Get current stock tracking mode (default to 1 if not set)
+        # Indices: use_stock_tracking=12, is_available=13
+        current_use_stock = product[12] if len(product) > 12 and product[12] is not None else 1
+        current_is_available = product[13] if len(product) > 13 and product[13] is not None else 1
+        
+        use_stock_var = ctk.IntVar(value=current_use_stock)
+        stock_mode_check = ctk.CTkCheckBox(
+            stock_mode_frame,
+            text="Use Stock Tracking",
+            variable=use_stock_var,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            checkbox_width=20,
+            checkbox_height=20
+        )
+        stock_mode_check.pack(side="left")
+        
+        ctk.CTkLabel(
+            stock_mode_frame,
+            text="(Uncheck for made-to-order items like Burgers)",
+            font=ctk.CTkFont(size=9),
+            text_color=COLORS["text_secondary"]
+        ).pack(side="left", padx=(8, 0))
+        row += 1
+        
+        # Row 5: Stock/Availability and Unit
         form_frame.grid_columnconfigure((0, 1), weight=1)
         
-        ctk.CTkLabel(form_frame, text="Stock *", font=ctk.CTkFont(size=10, weight="bold")).grid(row=row, column=0, sticky="w", padx=12, pady=(4, 2))
+        stock_label = ctk.CTkLabel(form_frame, text="Stock *", font=ctk.CTkFont(size=10, weight="bold"))
+        stock_label.grid(row=row, column=0, sticky="w", padx=12, pady=(4, 2))
         ctk.CTkLabel(form_frame, text="Unit", font=ctk.CTkFont(size=10, weight="bold")).grid(row=row, column=1, sticky="w", padx=12, pady=(4, 2))
         row += 1
         
+        # Stock entry (for stock tracking mode)
         stock_entry = ctk.CTkEntry(form_frame, height=28, font=ctk.CTkFont(size=12))
         stock_entry.insert(0, str(product[4]))
         stock_entry.grid(row=row, column=0, sticky="ew", padx=(12, 6), pady=(0, 8))
+        
+        # Availability switch (for availability mode)
+        availability_var = ctk.IntVar(value=current_is_available)
+        availability_frame = ctk.CTkFrame(form_frame, fg_color="transparent")
+        
+        availability_switch = ctk.CTkSwitch(
+            availability_frame,
+            text="Available",
+            variable=availability_var,
+            font=ctk.CTkFont(size=12),
+            switch_width=50,
+            switch_height=25
+        )
+        availability_switch.pack(anchor="w", pady=4)
+        
+        # Store the row for toggling
+        stock_row = row
+        
+        # Toggle between stock entry and availability switch
+        def toggle_stock_mode():
+            if use_stock_var.get() == 1:
+                # Stock tracking mode
+                stock_label.configure(text="Stock *")
+                availability_frame.grid_forget()
+                stock_entry.grid(row=stock_row, column=0, sticky="ew", padx=(12, 6), pady=(0, 8))
+            else:
+                # Availability mode
+                stock_label.configure(text="Availability")
+                stock_entry.grid_forget()
+                availability_frame.grid(row=stock_row, column=0, sticky="ew", padx=(12, 6), pady=(0, 8))
+        
+        stock_mode_check.configure(command=toggle_stock_mode)
+        
+        # Initialize the correct view based on current mode
+        if current_use_stock == 0:
+            toggle_stock_mode()
         
         current_unit = product[8] if len(product) > 8 and product[8] else "pcs"
         unit_var = ctk.StringVar(value=current_unit)
@@ -1027,7 +1315,7 @@ class ProductsPage:
             height=28, font=ctk.CTkFont(size=12), dropdown_font=ctk.CTkFont(size=11),
             button_color=COLORS["primary"]
         )
-        unit_dropdown.grid(row=row, column=1, sticky="ew", padx=(6, 12), pady=(0, 8))
+        unit_dropdown.grid(row=stock_row, column=1, sticky="ew", padx=(6, 12), pady=(0, 8))
         
         def on_unit_change(choice):
             if choice == "Custom...":
@@ -1037,6 +1325,7 @@ class ProductsPage:
                 else: unit_dropdown.set("pcs")
         unit_dropdown.configure(command=on_unit_change)
         
+
         row += 1
         
         # Row 5: Supplier
@@ -1566,15 +1855,25 @@ class ProductsPage:
                         supp_id = self.database.add_supplier(supp_name)
                         supplier_map[supp_name] = supp_id
                 
+                # Handle stock tracking mode
+                use_stock_tracking = use_stock_var.get()
+                if use_stock_tracking:
+                    stock_val = int(stock_entry.get() or 0)
+                    is_available = 1  # Always available if using stock tracking
+                else:
+                    stock_val = 0  # No stock tracking
+                    is_available = availability_var.get()
+                
                 self.database.update_product(
                     product[0], name_entry.get().strip(), category_dropdown.get(),
-                    float(price_entry.get() or 0), int(stock_entry.get() or 0),
+                    float(price_entry.get() or 0), stock_val,
                     barcode_entry.get().strip() or None, desc_entry.get().strip() or None,
                     unit_var.get(), float(cost_entry.get() or 0), float(markup_entry.get() or 0),
-                    supplier_id=supp_id
+                    supplier_id=supp_id, use_stock_tracking=use_stock_tracking, is_available=is_available
                 )
                 messagebox.showinfo("Success", "Updated!"); dialog.destroy(); self.switch_page("products")
             except Exception as e: messagebox.showerror("Error", str(e))
+
             
         ctk.CTkButton(btn_frame, text="✕ Cancel", command=dialog.destroy, height=32, width=90, fg_color=COLORS["danger"], font=ctk.CTkFont(size=11)).pack(side="left")
         ctk.CTkButton(btn_frame, text="✓ Update Product", command=update_product, height=32, fg_color=COLORS["success"], font=ctk.CTkFont(size=11, weight="bold")).pack(side="right", fill="x", expand=True, padx=(5, 0))

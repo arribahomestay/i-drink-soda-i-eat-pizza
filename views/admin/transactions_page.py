@@ -1,4 +1,5 @@
 import customtkinter as ctk
+import json
 from tkinter import messagebox
 from datetime import datetime, timedelta
 from config import COLORS, CURRENCY_SYMBOL
@@ -242,20 +243,56 @@ class TransactionsPage:
             
             # Modifiers
             if mods_str:
-                mod_names = [m.strip() for m in mods_str.split(", ") if m.strip()]
-                for m_name in mod_names:
-                    # Mod Row
-                    mod_row = ctk.CTkFrame(scroll, fg_color="transparent")
-                    mod_row.pack(fill="x")
-                    ctk.CTkLabel(mod_row, text=f" + {m_name}", font=ctk.CTkFont(size=12), text_color=COLORS["text_primary"], anchor="w").pack(side="left", padx=(10,0))
+                try:
+                    # Try JSON parsing (New format)
+                    mods_list = json.loads(mods_str)
                     
-                    # Mod Linked Inv
-                    if m_name in mod_map:
-                        link_name, d_qty = mod_map[m_name]
-                        total_mod_used = d_qty * qty
-                        l_row = ctk.CTkFrame(scroll, fg_color="transparent")
-                        l_row.pack(fill="x")
-                        ctk.CTkLabel(l_row, text=f"     -> Used: {total_mod_used:g} x {link_name}", font=ctk.CTkFont(size=11), text_color=COLORS["text_secondary"], anchor="w").pack(side="left", padx=(15,0))
+                    for mod in mods_list:
+                        # Extract details
+                        if isinstance(mod, dict):
+                            m_name = mod.get('name', 'Unknown')
+                            m_qty = mod.get('quantity', 1)
+                            m_price = mod.get('price', 0)
+                        else:
+                            # Fallback if list of strings
+                            m_name = str(mod)
+                            m_qty = 1
+                            m_price = 0
+                            
+                        # Display
+                        disp_str = f" + {m_qty}x {m_name}"
+                        if m_price > 0:
+                            disp_str += f" (+{CURRENCY_SYMBOL}{m_price:.2f})"
+                            
+                        mod_row = ctk.CTkFrame(scroll, fg_color="transparent")
+                        mod_row.pack(fill="x")
+                        ctk.CTkLabel(mod_row, text=disp_str, font=ctk.CTkFont(size=12), text_color=COLORS["text_primary"], anchor="w").pack(side="left", padx=(10,0))
+                        
+                        # Linked Ingredient Logic (visual only)
+                        # We use mod_map fallback since real linkage is complex to reconstruct without ID
+                        if m_name in mod_map:
+                            link_name, d_qty = mod_map[m_name]
+                            total_mod_used = d_qty * m_qty
+                            l_row = ctk.CTkFrame(scroll, fg_color="transparent")
+                            l_row.pack(fill="x")
+                            ctk.CTkLabel(l_row, text=f"     -> Used: {total_mod_used:g} x {link_name}", font=ctk.CTkFont(size=11), text_color=COLORS["text_secondary"], anchor="w").pack(side="left", padx=(30,0))
+                            
+                except (json.JSONDecodeError, TypeError):
+                    # Fallback: Comma-separated string (Old format)
+                    mod_names = [m.strip() for m in mods_str.split(", ") if m.strip()]
+                    for m_name in mod_names:
+                        # Mod Row
+                        mod_row = ctk.CTkFrame(scroll, fg_color="transparent")
+                        mod_row.pack(fill="x")
+                        ctk.CTkLabel(mod_row, text=f" + {m_name}", font=ctk.CTkFont(size=12), text_color=COLORS["text_primary"], anchor="w").pack(side="left", padx=(10,0))
+                        
+                        # Mod Linked Inv
+                        if m_name in mod_map:
+                            link_name, d_qty = mod_map[m_name]
+                            total_mod_used = d_qty * qty
+                            l_row = ctk.CTkFrame(scroll, fg_color="transparent")
+                            l_row.pack(fill="x")
+                            ctk.CTkLabel(l_row, text=f"     -> Used: {total_mod_used:g} x {link_name}", font=ctk.CTkFont(size=11), text_color=COLORS["text_secondary"], anchor="w").pack(side="left", padx=(15,0))
 
             # Subtle Divider
             ctk.CTkFrame(scroll, height=1, fg_color="#333").pack(fill="x", pady=5)

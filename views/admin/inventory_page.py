@@ -102,13 +102,18 @@ class InventoryPage:
         stats_frame.pack(fill="x", padx=20, pady=20)
         
         # Get inventory data
+        # Get inventory data
         all_products = self.database.get_all_products()
+        # Filter for stock tracked only for the count
+        # Indices: use_stock_tracking=12
+        stock_tracked_products = [p for p in all_products if (len(p) > 12 and p[12] == 1)]
+        
         low_stock = self.database.get_low_stock_products(10)
         out_of_stock = self.database.get_out_of_stock_products()
         inventory_value = self.database.get_inventory_value()
         
         stats = [
-            ("Total Products", len(all_products), COLORS["info"]),
+            ("Stock Items", len(stock_tracked_products), COLORS["info"]),
             ("Low Stock Items", len(low_stock), COLORS["warning"]),
             ("Out of Stock", len(out_of_stock), COLORS["danger"]),
             ("Inventory Value", f"{CURRENCY_SYMBOL}{inventory_value:.2f}", COLORS["success"])
@@ -182,14 +187,43 @@ class InventoryPage:
             ).pack(pady=20)
     
     def show_low_stock(self):
-        """Show low stock products"""
+        """Show low stock products - Compact Table Layout"""
+        # Get low stock products
+        low_stock_raw = self.database.get_low_stock_products(10)
+        
+        # Filter for only stock-tracked items
+        # Indices: use_stock_tracking=12
+        low_stock = []
+        if low_stock_raw:
+            for p in low_stock_raw:
+                use_stock = p[12] if len(p) > 12 and p[12] is not None else 1
+                if use_stock == 1:
+                    low_stock.append(p)
+
+        # Header
+        header = ctk.CTkFrame(self.inventory_content, fg_color="transparent")
+        header.pack(fill="x", padx=20, pady=(20, 10))
+
         ctk.CTkLabel(
-            self.inventory_content,
-            text="⚠️ Low Stock Alert",
+            header,
+            text=f"⚠️ Low Stock Alert ({len(low_stock)})",
             font=ctk.CTkFont(size=18, weight="bold"),
             text_color=COLORS["text_primary"]
-        ).pack(pady=20, padx=20, anchor="w")
+        ).pack(side="left")
         
+        # Table Header
+        table_header = ctk.CTkFrame(self.inventory_content, fg_color=COLORS["dark"], height=35)
+        table_header.pack(fill="x", padx=20, pady=(0, 5))
+        table_header.pack_propagate(False)
+        
+        h_frame = ctk.CTkFrame(table_header, fg_color="transparent")
+        h_frame.pack(fill="both", expand=True, padx=15, pady=5)
+        
+        ctk.CTkLabel(h_frame, text="Product Name", font=ctk.CTkFont(size=11, weight="bold"), text_color=COLORS["text_secondary"], width=200, anchor="w").pack(side="left", padx=(0, 10))
+        ctk.CTkLabel(h_frame, text="Category", font=ctk.CTkFont(size=11, weight="bold"), text_color=COLORS["text_secondary"], width=120, anchor="w").pack(side="left", padx=(0, 10))
+        ctk.CTkLabel(h_frame, text="Price", font=ctk.CTkFont(size=11, weight="bold"), text_color=COLORS["text_secondary"], width=80, anchor="w").pack(side="left", padx=(0, 10))
+        ctk.CTkLabel(h_frame, text="Stock Level", font=ctk.CTkFont(size=11, weight="bold"), text_color=COLORS["text_secondary"], width=80, anchor="e").pack(side="right")
+
         products_list = ctk.CTkScrollableFrame(
             self.inventory_content,
             fg_color="transparent",
@@ -197,44 +231,63 @@ class InventoryPage:
         )
         products_list.pack(fill="both", expand=True, padx=20, pady=(0, 20))
         
-        low_stock = self.database.get_low_stock_products(10)
-        
         if low_stock:
             for product in low_stock:
-                card = ctk.CTkFrame(products_list, fg_color=COLORS["dark"], corner_radius=10)
-                card.pack(fill="x", pady=5)
+                # product: [id, name, ... , stock, ...]
                 
-                content = ctk.CTkFrame(card, fg_color="transparent")
-                content.pack(fill="x", padx=15, pady=12)
+                row = ctk.CTkFrame(products_list, fg_color=COLORS["card_bg"], corner_radius=5, height=35)
+                row.pack(fill="x", pady=2)
+                row.pack_propagate(False)
                 
-                left = ctk.CTkFrame(content, fg_color="transparent")
-                left.pack(side="left", fill="x", expand=True)
+                content = ctk.CTkFrame(row, fg_color="transparent")
+                content.pack(fill="both", expand=True, padx=15, pady=5)
                 
-                ctk.CTkLabel(
-                    left,
-                    text=product[1],
-                    font=ctk.CTkFont(size=13, weight="bold"),
-                    text_color=COLORS["text_primary"]
-                ).pack(anchor="w")
-                
-                ctk.CTkLabel(
-                    left,
-                    text=f"Category: {product[2]} | Price: {CURRENCY_SYMBOL}{product[3]:.2f}",
-                    font=ctk.CTkFont(size=11),
-                    text_color=COLORS["text_secondary"]
-                ).pack(anchor="w")
-                
-                stock_color = COLORS["danger"] if product[4] == 0 else COLORS["warning"]
+                # Name
                 ctk.CTkLabel(
                     content,
-                    text=f"Stock: {product[4]}",
-                    font=ctk.CTkFont(size=14, weight="bold"),
-                    text_color=stock_color
+                    text=product[1],
+                    font=ctk.CTkFont(size=12, weight="bold"),
+                    text_color=COLORS["text_primary"],
+                    width=200,
+                    anchor="w"
+                ).pack(side="left", padx=(0, 10))
+                
+                # Category
+                ctk.CTkLabel(
+                    content,
+                    text=product[2],
+                    font=ctk.CTkFont(size=11),
+                    text_color=COLORS["text_secondary"],
+                    width=120,
+                    anchor="w"
+                ).pack(side="left", padx=(0, 10))
+                
+                # Price
+                ctk.CTkLabel(
+                    content,
+                    text=f"{CURRENCY_SYMBOL}{product[3]:.2f}",
+                    font=ctk.CTkFont(size=11),
+                    text_color=COLORS["text_secondary"],
+                    width=80,
+                    anchor="w"
+                ).pack(side="left", padx=(0, 10))
+                
+                # Stock (Right aligned)
+                stock_val = product[4]
+                stock_color = COLORS["danger"] if stock_val == 0 else COLORS["warning"]
+                
+                ctk.CTkLabel(
+                    content,
+                    text=f"{stock_val}",
+                    font=ctk.CTkFont(size=12, weight="bold"),
+                    text_color=stock_color,
+                    width=80,
+                    anchor="e"
                 ).pack(side="right")
         else:
             ctk.CTkLabel(
                 products_list,
-                text="✅ All products have sufficient stock!",
+                text="✅ All tracked products have sufficient stock!",
                 font=ctk.CTkFont(size=14),
                 text_color=COLORS["success"]
             ).pack(pady=50)
@@ -289,7 +342,19 @@ class InventoryPage:
             
             search_term = search_var.get().lower()
             all_products = self.database.get_all_products()
-            filtered = [p for p in all_products if search_term in p[1].lower() or (p[5] and search_term in p[5].lower())]
+            
+            # Filter: Match search AND (Stock Tracking is ON)
+            # Indices: use_stock_tracking=12
+            filtered = []
+            for p in all_products:
+                # Check stock tracking (default to 1 if missing/None)
+                use_stock = p[12] if len(p) > 12 and p[12] is not None else 1
+                if use_stock == 0:
+                    continue
+                
+                # Check search term
+                if search_term in p[1].lower() or (p[5] and search_term in p[5].lower()):
+                    filtered.append(p)
             
             if not filtered:
                 ctk.CTkLabel(
@@ -477,7 +542,19 @@ class InventoryPage:
             
             search_term = search_var.get().lower()
             all_products = self.database.get_all_products()
-            filtered = [p for p in all_products if search_term in p[1].lower() or (p[5] and search_term in p[5].lower())]
+            
+            # Filter: Match search AND (Stock Tracking is ON)
+            # Indices: use_stock_tracking=12
+            filtered = []
+            for p in all_products:
+                # Check stock tracking (default to 1 if missing/None)
+                use_stock = p[12] if len(p) > 12 and p[12] is not None else 1
+                if use_stock == 0:
+                    continue
+                
+                # Check search term
+                if search_term in p[1].lower() or (p[5] and search_term in p[5].lower()):
+                    filtered.append(p)
             
             if not filtered:
                 ctk.CTkLabel(

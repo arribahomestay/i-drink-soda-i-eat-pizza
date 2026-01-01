@@ -32,11 +32,138 @@ class SettingsPage:
         tabview.pack(fill="both", expand=True, padx=30, pady=(0, 30))
         
         tabview.add("Receipt Config")
+        tabview.add("Email Settings")
         tabview.add("Activity Logs")
         
         self.setup_receipt_tab(tabview.tab("Receipt Config"))
+        self.setup_email_tab(tabview.tab("Email Settings"))
         self.setup_activity_log_tab(tabview.tab("Activity Logs"))
     
+    def setup_email_tab(self, parent_frame):
+        """Setup Email Configuration tab"""
+        # Container
+        container = ctk.CTkFrame(parent_frame, fg_color=COLORS["card_bg"], corner_radius=15)
+        container.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # Header
+        header = ctk.CTkFrame(container, fg_color="transparent")
+        header.pack(fill="x", padx=30, pady=(30, 20))
+        
+        ctk.CTkLabel(
+            header,
+            text="📧 Email Reporting Settings",
+            font=ctk.CTkFont(size=20, weight="bold"),
+            text_color=COLORS["text_primary"]
+        ).pack(side="left")
+        
+        # Form
+        form = ctk.CTkFrame(container, fg_color="transparent")
+        form.pack(fill="x", padx=30)
+        
+        # Load Settings
+        settings = self.database.get_email_settings()
+        # Defaults
+        current_sender = settings[1] if settings else ""
+        current_password = settings[2] if settings else ""
+        current_receiver = settings[3] if settings else ""
+        current_server = settings[4] if settings else "smtp.gmail.com"
+        current_port = settings[5] if settings else 587
+        
+        # Sender Email
+        ctk.CTkLabel(form, text="Sender Email (Gmail/Outlook)", font=ctk.CTkFont(weight="bold")).pack(anchor="w", pady=(10, 5))
+        sender_entry = ctk.CTkEntry(form, width=400, height=35)
+        sender_entry.pack(anchor="w", pady=(0, 5))
+        sender_entry.insert(0, current_sender or "")
+        
+        # App Password
+        ctk.CTkLabel(form, text="App Password (Not your login password)", font=ctk.CTkFont(weight="bold")).pack(anchor="w", pady=(10, 5))
+        pwd_entry = ctk.CTkEntry(form, width=400, height=35, show="*")
+        pwd_entry.pack(anchor="w", pady=(0, 5))
+        pwd_entry.insert(0, current_password or "")
+        
+        # Help Text
+        help_lbl = ctk.CTkLabel(
+            form, 
+            text="For Gmail: Use 'App Password' generated from Google Account Security settings.",
+            font=ctk.CTkFont(size=11, slant="italic"),
+            text_color=COLORS["text_secondary"]
+        )
+        help_lbl.pack(anchor="w", pady=(0, 15))
+        
+        # Receiver Email
+        ctk.CTkLabel(form, text="Receiver Email (Where reports go)", font=ctk.CTkFont(weight="bold")).pack(anchor="w", pady=(10, 5))
+        receiver_entry = ctk.CTkEntry(form, width=400, height=35)
+        receiver_entry.pack(anchor="w", pady=(0, 20))
+        receiver_entry.insert(0, current_receiver or "")
+        
+        # Advanced (Server/Port) - Collapsible or just shown
+        adv_frame = ctk.CTkFrame(form, fg_color="transparent")
+        adv_frame.pack(anchor="w", fill="x", pady=10)
+        
+        ctk.CTkLabel(adv_frame, text="SMTP Server:").pack(side="left", padx=(0, 10))
+        server_entry = ctk.CTkEntry(adv_frame, width=200)
+        server_entry.pack(side="left", padx=(0, 20))
+        server_entry.insert(0, current_server)
+        
+        ctk.CTkLabel(adv_frame, text="Port:").pack(side="left", padx=(0, 10))
+        port_entry = ctk.CTkEntry(adv_frame, width=80)
+        port_entry.pack(side="left")
+        port_entry.insert(0, str(current_port))
+        
+        def save_email_config():
+            try:
+                self.database.save_email_settings(
+                    sender=sender_entry.get().strip(),
+                    password=pwd_entry.get().strip(),
+                    receiver=receiver_entry.get().strip(),
+                    server=server_entry.get().strip(),
+                    port=int(port_entry.get().strip())
+                )
+                messagebox.showinfo("Success", "Email settings saved!")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to save: {e}")
+                
+        def test_email():
+            # Import here to avoid circular
+            import sys
+            sys.path.append(r"c:\Users\USER\Documents\POINTOFSALE")
+            from email_sender import send_email_with_attachment
+            
+            # Temporary construct settings
+            s_settings = (0, 
+                sender_entry.get().strip(),
+                pwd_entry.get().strip(),
+                receiver_entry.get().strip(),
+                server_entry.get().strip(),
+                int(port_entry.get().strip())
+            )
+            
+            success, msg = send_email_with_attachment(
+                s_settings, 
+                None, 
+                "POS System Test Email", 
+                "This is a test email from your POS system. If you see this, configuration is correct!"
+            )
+            
+            if success:
+                messagebox.showinfo("Success", msg)
+            else:
+                messagebox.showerror("Failed", msg)
+        
+        # Buttons
+        btn_frame = ctk.CTkFrame(container, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=30, pady=20)
+        
+        ctk.CTkButton(
+            btn_frame, text="Test Configuration", command=test_email,
+            fg_color=COLORS["info"], width=150
+        ).pack(side="left", padx=(0, 10))
+        
+        ctk.CTkButton(
+            btn_frame, text="Save Settings", command=save_email_config,
+            fg_color=COLORS["success"], width=150
+        ).pack(side="left")
+
     def setup_activity_log_tab(self, parent_frame):
         """Setup Activity Logs tab"""
         # Activity Logs List

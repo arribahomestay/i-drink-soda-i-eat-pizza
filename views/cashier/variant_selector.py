@@ -51,13 +51,34 @@ class VariantSelector:
             text_color=COLORS["text_primary"]
         ).pack(side="left", padx=20, pady=10)
         
-        stock_val = self.product[4]
-        stock_color = COLORS["success"] if stock_val > 5 else COLORS["danger"]
+        # Check stock/availability
+        # Indices: use_stock_tracking=12, is_available=13
+        use_stock = self.product[12] if len(self.product) > 12 and self.product[12] is not None else 1
+        is_avail = self.product[13] if len(self.product) > 13 and self.product[13] is not None else 1
+        
+        if use_stock == 0:
+            # Availability mode
+            if is_avail:
+                status_text = "✓ Available"
+                status_color = COLORS["success"]
+            else:
+                status_text = "✗ Not Available"
+                status_color = COLORS["danger"]
+        else:
+            # Stock tracking mode
+            stock_val = self.product[4]
+            if stock_val <= 0:
+                status_text = "Out of Stock"
+                status_color = COLORS["danger"]
+            else:
+                status_text = f"Stock: {stock_val}"
+                status_color = COLORS["success"] if stock_val > 5 else "#ff9800"
+        
         ctk.CTkLabel(
             header,
-            text=f"Stock: {stock_val}",
+            text=status_text,
             font=ctk.CTkFont(size=12, weight="bold"),
-            text_color=stock_color
+            text_color=status_color
         ).pack(side="right", padx=20)
 
         # --- BODY (Horizontal Container) ---

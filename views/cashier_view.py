@@ -109,9 +109,20 @@ class CashierView(ctk.CTkFrame):
     
     def add_to_cart(self, product):
         """Add product to cart with customization and quantity dialog"""
-        # Check stock first
-        if product[4] <= 0:
-            messagebox.showwarning("Out of Stock", "This product is out of stock")
+        # Check stock/availability first
+        # Indices: use_stock_tracking=12, is_available=13
+        use_stock = product[12] if len(product) > 12 and product[12] is not None else 1
+        is_avail = product[13] if len(product) > 13 and product[13] is not None else 1
+        
+        can_add = False
+        if use_stock == 0:
+            can_add = (is_avail == 1)
+        else:
+            can_add = (product[4] > 0)
+            
+        if not can_add:
+            msg = "This product is currently unavailable" if use_stock == 0 else "This product is out of stock"
+            messagebox.showwarning("Unavailable", msg)
             return
 
         product_id = product[0]
@@ -138,11 +149,33 @@ class CashierView(ctk.CTkFrame):
         """Add simple product to cart"""
         product_id = product[0]
         
+        # Indices: use_stock_tracking=12, is_available=13
+        use_stock = product[12] if len(product) > 12 and product[12] is not None else 1
+        is_avail = product[13] if len(product) > 13 and product[13] is not None else 1
+        
+        # Check overall availability
+        can_add_new = False
+        if use_stock == 0:
+            can_add_new = (is_avail == 1)
+        else:
+            can_add_new = (product[4] > 0)
+            
+        if not can_add_new:
+            msg = "This product is currently unavailable" if use_stock == 0 else "This product is out of stock"
+            messagebox.showwarning("Unavailable", msg)
+            return
+        
         # Check if identical item already in cart
         for item in self.shopping_cart.get_items():
             # Only aggregate if no variants/modifiers
             if item['product_id'] == product_id and not item.get('variants') and not item.get('modifiers'):
-                if item['quantity'] < product[4]:  # Check stock
+                # Check quantity limit
+                can_increment = True
+                if use_stock == 1:
+                    if item['quantity'] >= product[4]:
+                        can_increment = False
+                
+                if can_increment:
                     item['quantity'] += 1
                     item['subtotal'] = item['quantity'] * item['price']
                     self.shopping_cart.update_cart_display()
@@ -151,20 +184,18 @@ class CashierView(ctk.CTkFrame):
                     messagebox.showwarning("Stock Limit", "Not enough stock available")
                     return
         
-        if product[4] > 0:
-            item = {
-                'product_id': product_id,
-                'name': product[1],
-                'price': product[3],
-                'quantity': 1,
-                'subtotal': product[3],
-                'variants': [],
-                'modifiers': [],
-                'note': ""
-            }
-            self.shopping_cart.add_item(item)
-        else:
-            messagebox.showwarning("Out of Stock", "This product is out of stock")
+        # Add new item
+        item = {
+            'product_id': product_id,
+            'name': product[1],
+            'price': product[3],
+            'quantity': 1,
+            'subtotal': product[3],
+            'variants': [],
+            'modifiers': [],
+            'note': ""
+        }
+        self.shopping_cart.add_item(item)
     
     def add_customized_item_to_cart(self, item):
         """Add customized item to cart (from variant selector)"""
@@ -214,6 +245,9 @@ class CashierView(ctk.CTkFrame):
         """Show all items with stock levels and real-time search"""
         from config import CURRENCY_SYMBOL
         
+        # Refresh product grid to show latest data
+        self.product_grid.load_products()
+        
         # Create items dialog
         dialog = ctk.CTkToplevel(self)
         dialog.title("Product Inventory")
@@ -251,6 +285,24 @@ class CashierView(ctk.CTkFrame):
             corner_radius=8
         ).pack(side="right")
         
+        # Tabs
+        current_tab = ["stock"] # Use list to be mutable in nested scope
+        
+        def switch_tab(value):
+            current_tab[0] = "stock" if value == "Stock Inventory" else "avail"
+            display_products(search_entry.get())
+            
+        tab_selector = ctk.CTkSegmentedButton(
+            dialog,
+            values=["Stock Inventory", "Made-to-Order"],
+            command=switch_tab,
+            height=30,
+            selected_color=COLORS["primary"],
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        tab_selector.pack(fill="x", padx=20, pady=(0, 10))
+        tab_selector.set("Stock Inventory")
+        
         # Search bar
         search_frame = ctk.CTkFrame(dialog, fg_color=COLORS["card_bg"], corner_radius=10)
         search_frame.pack(fill="x", padx=20, pady=(0, 10))
@@ -278,7 +330,7 @@ class CashierView(ctk.CTkFrame):
         ctk.CTkLabel(header_content, text="Product Name", font=ctk.CTkFont(size=10, weight="bold"), text_color=COLORS["text_secondary"], width=200, anchor="w").pack(side="left", padx=(0, 10))
         ctk.CTkLabel(header_content, text="Category", font=ctk.CTkFont(size=10, weight="bold"), text_color=COLORS["text_secondary"], width=120, anchor="w").pack(side="left", padx=(0, 10))
         ctk.CTkLabel(header_content, text="Price", font=ctk.CTkFont(size=10, weight="bold"), text_color=COLORS["text_secondary"], width=80, anchor="w").pack(side="left", padx=(0, 10))
-        ctk.CTkLabel(header_content, text="Stock", font=ctk.CTkFont(size=10, weight="bold"), text_color=COLORS["text_secondary"], width=60, anchor="w").pack(side="left")
+        ctk.CTkLabel(header_content, text="Status", font=ctk.CTkFont(size=10, weight="bold"), text_color=COLORS["text_secondary"], width=80, anchor="w").pack(side="left")
         
         # Scrollable list
         list_frame = ctk.CTkScrollableFrame(
@@ -289,7 +341,7 @@ class CashierView(ctk.CTkFrame):
         list_frame.pack(fill="both", expand=True, padx=0, pady=0)
         
         def display_products(search_term=""):
-            """Display products filtered by search term"""
+            """Display products filtered by search term and tab"""
             # Clear existing items
             for widget in list_frame.winfo_children():
                 widget.destroy()
@@ -297,16 +349,26 @@ class CashierView(ctk.CTkFrame):
             # Get all products
             all_products = self.database.get_all_products()
             
-            # Filter by search term
-            if search_term:
-                search_lower = search_term.lower()
-                filtered_products = [
-                    p for p in all_products 
-                    if search_lower in p[1].lower() or  # name
-                       (p[2] and search_lower in p[2].lower())  # category
-                ]
-            else:
-                filtered_products = all_products
+            filtered_products = []
+            
+            search_lower = search_term.lower() if search_term else ""
+            target_stock_mode = 1 if current_tab[0] == "stock" else 0
+            
+            for p in all_products:
+                # Filter by Tab
+                # Indices: use_stock_tracking=12
+                use_stock = p[12] if len(p) > 12 and p[12] is not None else 1
+                if use_stock != target_stock_mode:
+                    continue
+                    
+                # Filter by Search
+                if search_lower:
+                    name_match = search_lower in p[1].lower()
+                    cat_match = (p[2] and search_lower in p[2].lower())
+                    if not (name_match or cat_match):
+                        continue
+                        
+                filtered_products.append(p)
             
             # Display products
             if filtered_products:
@@ -318,15 +380,29 @@ class CashierView(ctk.CTkFrame):
                     stock = product[4] if len(product) > 4 else 0
                     
                     # Determine stock status color
-                    if stock == 0:
-                        stock_color = COLORS["danger"]
-                        stock_text = "Out of Stock"
-                    elif stock <= 10:
-                        stock_color = "#ff9800"  # Orange
-                        stock_text = str(stock)
+                    # Indices: use_stock_tracking=12, is_available=13
+                    use_stock = product[12] if len(product) > 12 and product[12] is not None else 1
+                    is_avail = product[13] if len(product) > 13 and product[13] is not None else 1
+                    
+                    if use_stock == 0:
+                        # Availability mode (Made-to-order)
+                        if is_avail:
+                            stock_color = COLORS["success"]
+                            stock_text = "Available"
+                        else:
+                            stock_color = COLORS["danger"]
+                            stock_text = "Unavail"
                     else:
-                        stock_color = COLORS["success"]
-                        stock_text = str(stock)
+                        # Stock tracking mode
+                        if stock == 0:
+                            stock_color = COLORS["danger"]
+                            stock_text = "Out of Stock"
+                        elif stock <= 10:
+                            stock_color = "#ff9800"  # Orange
+                            stock_text = f"{stock} (Low)"
+                        else:
+                            stock_color = COLORS["success"]
+                            stock_text = str(stock)
                     
                     row = ctk.CTkFrame(list_frame, fg_color=COLORS["dark"], corner_radius=0, height=32)
                     row.pack(fill="x", pady=1, padx=0)
@@ -371,13 +447,13 @@ class CashierView(ctk.CTkFrame):
                         text=stock_text,
                         font=ctk.CTkFont(size=10, weight="bold"),
                         text_color=stock_color,
-                        width=60,
+                        width=100,  
                         anchor="w"
                     ).pack(side="left")
             else:
                 ctk.CTkLabel(
                     list_frame,
-                    text="No products found",
+                    text="No products found in this category",
                     font=ctk.CTkFont(size=14),
                     text_color=COLORS["text_secondary"]
                 ).pack(pady=50)

@@ -12,6 +12,7 @@ class Database:
         self.conn = sqlite3.connect(DATABASE_NAME, check_same_thread=False)
         self.cursor = self.conn.cursor()
         self.create_tables()
+        self.create_email_tables()
         self.initialize_default_data()
     
     def create_tables(self):
@@ -97,6 +98,16 @@ class Database:
         # Migration: Add is_hidden to categories if not exists
         try:
             self.cursor.execute("ALTER TABLE categories ADD COLUMN is_hidden INTEGER DEFAULT 0")
+        except: pass
+        
+        # Migration: Add use_stock_tracking to products if not exists
+        try:
+            self.cursor.execute("ALTER TABLE products ADD COLUMN use_stock_tracking INTEGER DEFAULT 1")
+        except: pass
+        
+        # Migration: Add is_available to products if not exists (for non-stock items)
+        try:
+            self.cursor.execute("ALTER TABLE products ADD COLUMN is_available INTEGER DEFAULT 1")
         except: pass
         
         # Product Variants table
@@ -339,6 +350,37 @@ class Database:
         """Hash password using SHA-256"""
         return hashlib.sha256(password.encode()).hexdigest()
     
+    def create_email_tables(self):
+        """Create email settings table"""
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS email_settings (
+                id INTEGER PRIMARY KEY,
+                sender_email TEXT,
+                sender_password TEXT,
+                receiver_email TEXT,
+                smtp_server TEXT DEFAULT 'smtp.gmail.com',
+                smtp_port INTEGER DEFAULT 587,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        # Insert default row
+        self.cursor.execute("INSERT OR IGNORE INTO email_settings (id) VALUES (1)")
+        self.conn.commit()
+    
+    def get_email_settings(self):
+        """Get email configuration"""
+        self.cursor.execute("SELECT * FROM email_settings WHERE id = 1")
+        return self.cursor.fetchone()
+        
+    def save_email_settings(self, sender, password, receiver, server="smtp.gmail.com", port=587):
+        """Save email configuration"""
+        self.cursor.execute("""
+            UPDATE email_settings 
+            SET sender_email = ?, sender_password = ?, receiver_email = ?, smtp_server = ?, smtp_port = ?
+            WHERE id = 1
+        """, (sender, password, receiver, server, port))
+        self.conn.commit()
+
     def initialize_default_data(self):
         """Initialize default users and sample products"""
         # ... (keep existing initialization)
@@ -389,25 +431,46 @@ class Database:
 
     def get_products_by_supplier(self, supplier_id):
         """Get products linked to a supplier"""
-        self.cursor.execute("SELECT * FROM products WHERE supplier_id = ? ORDER BY name", (supplier_id,))
+        self.cursor.execute("""
+            SELECT id, name, category, price, stock, barcode, description, created_at, 
+                   unit, cost, markup, supplier_id, use_stock_tracking, is_available 
+            FROM products 
+            WHERE supplier_id = ? 
+            ORDER BY name
+        """, (supplier_id,))
         return self.cursor.fetchall()
     
     def get_all_products(self):
         """Get all products"""
-        self.cursor.execute("SELECT * FROM products ORDER BY name")
+        # Use explicit column names to ensure consistent ordering
+        # Order: id, name, category, price, stock, barcode, description, created_at, unit, cost, markup, supplier_id, use_stock_tracking, is_available
+        self.cursor.execute("""
+            SELECT id, name, category, price, stock, barcode, description, created_at, 
+                   unit, cost, markup, supplier_id, use_stock_tracking, is_available 
+            FROM products 
+            ORDER BY name
+        """)
         return self.cursor.fetchall()
     
     def search_products(self, search_term):
         """Search products by name or barcode"""
-        self.cursor.execute(
-            "SELECT * FROM products WHERE name LIKE ? OR barcode LIKE ? ORDER BY name",
-            (f"%{search_term}%", f"%{search_term}%")
-        )
+        self.cursor.execute("""
+            SELECT id, name, category, price, stock, barcode, description, created_at, 
+                   unit, cost, markup, supplier_id, use_stock_tracking, is_available 
+            FROM products 
+            WHERE name LIKE ? OR barcode LIKE ? 
+            ORDER BY name
+        """, (f"%{search_term}%", f"%{search_term}%"))
         return self.cursor.fetchall()
     
     def get_product_by_id(self, product_id):
         """Get product by ID"""
-        self.cursor.execute("SELECT * FROM products WHERE id = ?", (product_id,))
+        self.cursor.execute("""
+            SELECT id, name, category, price, stock, barcode, description, created_at, 
+                   unit, cost, markup, supplier_id, use_stock_tracking, is_available 
+            FROM products 
+            WHERE id = ?
+        """, (product_id,))
         return self.cursor.fetchone()
     
     def update_product_stock(self, product_id, quantity_change):
@@ -418,20 +481,22 @@ class Database:
         )
         self.conn.commit()
     
-    def add_product(self, name, category, price, stock, barcode, description, unit="pcs", cost=0, markup=0, supplier_id=None):
+    def add_product(self, name, category, price, stock, barcode, description, unit="pcs", cost=0, markup=0, supplier_id=None, use_stock_tracking=1, is_available=1):
         """Add new product"""
         self.cursor.execute(
-            "INSERT INTO products (name, category, price, stock, barcode, description, unit, cost, markup, supplier_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (name, category, price, stock, barcode, description, unit, cost, markup, supplier_id)
+            """INSERT INTO products (name, category, price, stock, barcode, description, unit, cost, markup, supplier_id, use_stock_tracking, is_available) 
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (name, category, price, stock, barcode, description, unit, cost, markup, supplier_id, use_stock_tracking, is_available)
         )
         self.conn.commit()
         return self.cursor.lastrowid
     
-    def update_product(self, product_id, name, category, price, stock, barcode, description, unit="pcs", cost=0, markup=0, supplier_id=None):
+    def update_product(self, product_id, name, category, price, stock, barcode, description, unit="pcs", cost=0, markup=0, supplier_id=None, use_stock_tracking=1, is_available=1):
         """Update product"""
         self.cursor.execute(
-            "UPDATE products SET name=?, category=?, price=?, stock=?, barcode=?, description=?, unit=?, cost=?, markup=?, supplier_id=? WHERE id=?",
-            (name, category, price, stock, barcode, description, unit, cost, markup, supplier_id, product_id)
+            """UPDATE products SET name=?, category=?, price=?, stock=?, barcode=?, description=?, unit=?, cost=?, markup=?, supplier_id=?, use_stock_tracking=?, is_available=? 
+               WHERE id=?""",
+            (name, category, price, stock, barcode, description, unit, cost, markup, supplier_id, use_stock_tracking, is_available, product_id)
         )
         self.conn.commit()
     
@@ -628,6 +693,18 @@ class Database:
             # Delete category
             self.cursor.execute("DELETE FROM categories WHERE id = ?", (category_id,))
             self.conn.commit()
+            
+    def rename_category(self, old_name, new_name):
+        """Rename a category and update all linked products"""
+        try:
+            # Atomic update
+            self.cursor.execute("UPDATE categories SET name = ? WHERE name = ?", (new_name, old_name))
+            self.cursor.execute("UPDATE products SET category = ? WHERE category = ?", (new_name, old_name))
+            self.conn.commit()
+            return True
+        except:
+            self.conn.rollback()
+            return False
             
     def toggle_category_visibility(self, category_id, is_hidden):
         """Toggle category visibility"""
@@ -963,23 +1040,33 @@ class Database:
     
     # Inventory Analytics
     def get_low_stock_products(self, threshold=10):
-        """Get products with low stock"""
+        """Get products with low stock (only tracked items)"""
         self.cursor.execute("""
-            SELECT * FROM products WHERE stock <= ? ORDER BY stock ASC
+            SELECT id, name, category, price, stock, barcode, description, created_at, 
+                   unit, cost, markup, supplier_id, use_stock_tracking, is_available
+            FROM products 
+            WHERE stock <= ? AND use_stock_tracking = 1
+            ORDER BY stock ASC
         """, (threshold,))
         return self.cursor.fetchall()
     
     def get_out_of_stock_products(self):
-        """Get out of stock products"""
+        """Get out of stock products (only tracked items)"""
         self.cursor.execute("""
-            SELECT * FROM products WHERE stock = 0 ORDER BY name
+            SELECT id, name, category, price, stock, barcode, description, created_at, 
+                   unit, cost, markup, supplier_id, use_stock_tracking, is_available
+            FROM products 
+            WHERE stock <= 0 AND use_stock_tracking = 1
+            ORDER BY name
         """)
         return self.cursor.fetchall()
     
     def get_inventory_value(self):
-        """Get total inventory value"""
+        """Get total inventory value (only tracked items)"""
         self.cursor.execute("""
-            SELECT SUM(price * stock) as total_value FROM products
+            SELECT SUM(price * stock) as total_value 
+            FROM products
+            WHERE use_stock_tracking = 1
         """)
         result = self.cursor.fetchone()
         return result[0] if result[0] else 0
@@ -993,6 +1080,17 @@ class Database:
             FROM products
             GROUP BY category
             ORDER BY category
+        """)
+        return self.cursor.fetchall()
+
+    def get_product_type_sales_count(self):
+        """Get total quantity sold split by stock tracking type"""
+        # Returns: [(use_stock_tracking, total_qty), ...]
+        self.cursor.execute("""
+            SELECT p.use_stock_tracking, SUM(ti.quantity)
+            FROM transaction_items ti
+            JOIN products p ON ti.product_id = p.id
+            GROUP BY p.use_stock_tracking
         """)
         return self.cursor.fetchall()
     

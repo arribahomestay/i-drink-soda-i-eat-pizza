@@ -161,8 +161,13 @@ class ModifiersPage:
         ctk.CTkLabel(form_frame, text="Select Inventory Product (Required)", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=20, pady=(20, 5))
         
         all_products = self.database.get_all_products()
+        
+        # Filter: Only stock-tracked products can be ingredients
+        # Indices: use_stock_tracking=12
+        stock_tracked = [p for p in all_products if (len(p) > 12 and p[12] == 1)]
+        
         # Map Display -> ID
-        prod_map = {f"{p[1]} (Stock: {p[4]})": p[0] for p in all_products}
+        prod_map = {f"{p[1]} (Stock: {p[4]})": p[0] for p in stock_tracked}
         prod_options = ["Select a product..."] + sorted(list(prod_map.keys()))
         
         prod_var = ctk.StringVar(value="Select a product...")

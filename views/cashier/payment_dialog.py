@@ -170,9 +170,14 @@ class PaymentDialog:
                         'quantity': item['quantity'],
                         'variant_id': item.get('selected_variant', {}).get('id') if isinstance(item.get('selected_variant'), dict) else None,
                         'variant_name': item.get('selected_variant', {}).get('name') if isinstance(item.get('selected_variant'), dict) else None,
-                        'modifiers': ", ".join([m['name'] for m in item.get('selected_modifiers', [])]) if item.get('selected_modifiers') else None,
+                        'modifiers': None, # Default
                         'selected_modifiers': item.get('selected_modifiers') # Pass full objects for stock logic
                     })
+                    
+                    # Serialize modifiers to JSON if present
+                    if item.get('selected_modifiers'):
+                        import json
+                        items_for_db[-1]['modifiers'] = json.dumps(item['selected_modifiers'])
                 
                 # Generate transaction number
                 transaction_number = f"TXN{datetime.now().strftime('%Y%m%d%H%M%S')}"
