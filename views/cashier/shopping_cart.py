@@ -1,0 +1,272 @@
+"""
+Shopping cart component for cashier view
+Handles cart display and management
+"""
+import customtkinter as ctk
+from tkinter import messagebox
+from config import COLORS, CURRENCY_SYMBOL, TAX_RATE
+
+
+class ShoppingCart:
+    def __init__(self, parent, database):
+        self.parent = parent
+        self.database = database
+        self.cart_items = []
+        self.cart_frame = None
+        self.subtotal_label = None
+        self.tax_label = None
+        self.total_label = None
+    
+    def create(self, checkout_callback, clear_callback):
+        """Create the shopping cart UI"""
+        # Right side - Cart
+        right_panel = ctk.CTkFrame(self.parent, fg_color=COLORS["card_bg"], corner_radius=15, width=450)
+        right_panel.pack(side="right", fill="both", padx=(10, 0))
+        right_panel.pack_propagate(False)
+        
+        # Cart header
+        cart_header = ctk.CTkLabel(
+            right_panel,
+            text="🛍️ Current Sale",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=COLORS["text_primary"]
+        )
+        cart_header.pack(pady=(20, 10), padx=20, anchor="w")
+        
+        # Cart items
+        self.cart_frame = ctk.CTkScrollableFrame(
+            right_panel,
+            fg_color=COLORS["dark"],
+            corner_radius=10,
+            scrollbar_button_color=COLORS["primary"]
+        )
+        self.cart_frame.pack(fill="both", expand=True, padx=20, pady=(0, 10))
+        
+        # Summary section
+        summary_frame = ctk.CTkFrame(right_panel, fg_color=COLORS["dark"], corner_radius=10)
+        summary_frame.pack(fill="x", padx=20, pady=(0, 10))
+        
+        # Subtotal
+        subtotal_row = ctk.CTkFrame(summary_frame, fg_color="transparent")
+        subtotal_row.pack(fill="x", padx=15, pady=(15, 5))
+        
+        ctk.CTkLabel(
+            subtotal_row,
+            text="Subtotal:",
+            font=ctk.CTkFont(size=13),
+            text_color=COLORS["text_secondary"]
+        ).pack(side="left")
+        
+        self.subtotal_label = ctk.CTkLabel(
+            subtotal_row,
+            text=f"{CURRENCY_SYMBOL}0.00",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color=COLORS["text_primary"]
+        )
+        self.subtotal_label.pack(side="right")
+        
+        # Tax row removed
+        self.tax_label = ctk.CTkLabel(self.parent, text="")  # Dummy label
+        
+        # Total
+        total_row = ctk.CTkFrame(summary_frame, fg_color="transparent")
+        total_row.pack(fill="x", padx=15, pady=(5, 15))
+        
+        ctk.CTkLabel(
+            total_row,
+            text="TOTAL:",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color=COLORS["text_primary"]
+        ).pack(side="left")
+        
+        self.total_label = ctk.CTkLabel(
+            total_row,
+            text=f"{CURRENCY_SYMBOL}0.00",
+            font=ctk.CTkFont(size=20, weight="bold"),
+            text_color=COLORS["success"]
+        )
+        self.total_label.pack(side="right")
+        
+        # Action buttons
+        buttons_frame = ctk.CTkFrame(right_panel, fg_color="transparent")
+        buttons_frame.pack(fill="x", padx=20, pady=(0, 20))
+        
+        clear_btn = ctk.CTkButton(
+            buttons_frame,
+            text="Clear Cart",
+            command=clear_callback,
+            height=45,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            fg_color=COLORS["danger"],
+            hover_color="#c0392b",
+            corner_radius=10
+        )
+        clear_btn.pack(fill="x", pady=(0, 10))
+        
+        checkout_btn = ctk.CTkButton(
+            buttons_frame,
+            text="Checkout",
+            command=checkout_callback,
+            height=50,
+            font=ctk.CTkFont(size=16, weight="bold"),
+            fg_color=COLORS["success"],
+            hover_color="#27ae60",
+            corner_radius=10
+        )
+        checkout_btn.pack(fill="x")
+        
+        # Initial display
+        self.update_cart_display()
+        
+        return right_panel
+    
+    def add_item(self, item):
+        """Add item to cart"""
+        self.cart_items.append(item)
+        self.update_cart_display()
+    
+    def remove_item(self, item):
+        """Remove item from cart"""
+        self.cart_items.remove(item)
+        self.update_cart_display()
+    
+    def clear_cart(self):
+        """Clear all items"""
+        self.cart_items = []
+        self.update_cart_display()
+    
+    def get_items(self):
+        """Get all cart items"""
+        return self.cart_items
+    
+    def update_cart_display(self):
+        """Update cart display"""
+        # Clear cart frame
+        for widget in self.cart_frame.winfo_children():
+            widget.destroy()
+        
+        if not self.cart_items:
+            empty_label = ctk.CTkLabel(
+                self.cart_frame,
+                text="Cart is empty\nAdd products to get started",
+                font=ctk.CTkFont(size=13),
+                text_color=COLORS["text_secondary"]
+            )
+            empty_label.pack(pady=50)
+        else:
+            for item in self.cart_items:
+                self.create_cart_item(item)
+        
+        # Update summary
+        self.update_summary()
+    
+    def create_cart_item(self, item):
+        """Create cart item widget"""
+        item_frame = ctk.CTkFrame(self.cart_frame, fg_color=COLORS["card_bg"], corner_radius=8)
+        item_frame.pack(fill="x", padx=5, pady=5)
+        
+        # Item info
+        info_frame = ctk.CTkFrame(item_frame, fg_color="transparent")
+        info_frame.pack(fill="x", padx=10, pady=10)
+        
+        name_label = ctk.CTkLabel(
+            info_frame,
+            text=item['name'],
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=COLORS["text_primary"],
+            anchor="w"
+        )
+        name_label.pack(anchor="w")
+        
+        details_frame = ctk.CTkFrame(info_frame, fg_color="transparent")
+        details_frame.pack(fill="x", pady=(5, 0))
+        
+        price_label = ctk.CTkLabel(
+            details_frame,
+            text=f"{CURRENCY_SYMBOL}{item['price']:.2f} x {item['quantity']}",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_secondary"]
+        )
+        price_label.pack(side="left")
+        
+        subtotal_label = ctk.CTkLabel(
+            details_frame,
+            text=f"{CURRENCY_SYMBOL}{item['subtotal']:.2f}",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=COLORS["success"]
+        )
+        subtotal_label.pack(side="right")
+        
+        # Quantity controls
+        controls_frame = ctk.CTkFrame(item_frame, fg_color="transparent")
+        controls_frame.pack(fill="x", padx=10, pady=(0, 10))
+        
+        remove_btn = ctk.CTkButton(
+            controls_frame,
+            text="Remove",
+            command=lambda i=item: self.remove_item(i),
+            width=60,
+            height=25,
+            font=ctk.CTkFont(size=10),
+            fg_color=COLORS["danger"],
+            hover_color="#c0392b",
+            corner_radius=5
+        )
+        remove_btn.pack(side="left")
+        
+        qty_frame = ctk.CTkFrame(controls_frame, fg_color="transparent")
+        qty_frame.pack(side="right")
+        
+        minus_btn = ctk.CTkButton(
+            qty_frame,
+            text="-",
+            command=lambda i=item: self.decrease_quantity(i),
+            width=30,
+            height=25,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            fg_color=COLORS["primary"],
+            corner_radius=5
+        )
+        minus_btn.pack(side="left", padx=2)
+        
+        plus_btn = ctk.CTkButton(
+            qty_frame,
+            text="+",
+            command=lambda i=item: self.increase_quantity(i),
+            width=30,
+            height=25,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            fg_color=COLORS["primary"],
+            corner_radius=5
+        )
+        plus_btn.pack(side="left", padx=2)
+    
+    def increase_quantity(self, item):
+        """Increase item quantity"""
+        product = self.database.get_product_by_id(item['product_id'])
+        if item['quantity'] < product[4]:
+            item['quantity'] += 1
+            item['subtotal'] = item['quantity'] * item['price']
+            self.update_cart_display()
+        else:
+            messagebox.showwarning("Stock Limit", "Not enough stock available")
+    
+    def decrease_quantity(self, item):
+        """Decrease item quantity"""
+        if item['quantity'] > 1:
+            item['quantity'] -= 1
+            item['subtotal'] = item['quantity'] * item['price']
+            self.update_cart_display()
+    
+    def update_summary(self):
+        """Update price summary"""
+        subtotal = sum(item['subtotal'] for item in self.cart_items)
+        tax = 0
+        total = subtotal
+        
+        self.subtotal_label.configure(text=f"{CURRENCY_SYMBOL}{subtotal:.2f}")
+        self.total_label.configure(text=f"{CURRENCY_SYMBOL}{total:.2f}")
+    
+    def get_total(self):
+        """Get cart total"""
+        return sum(item['subtotal'] for item in self.cart_items)

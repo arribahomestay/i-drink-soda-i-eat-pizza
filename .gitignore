@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv
+venv/
+ENV/
+*.db
+*.sqlite3
+.vscode/
+.idea/
+*.log
+inventory_report_*.html
+receipts/
+RCP_*.png

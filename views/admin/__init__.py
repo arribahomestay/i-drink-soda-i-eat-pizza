@@ -1,0 +1,3 @@
+"""
+Admin view modules
+"""
