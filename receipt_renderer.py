@@ -70,7 +70,17 @@ class ReceiptRenderer:
         y += 20 # Divider
         
         # Transaction Info
-        y += 60 # Date, Txn ID, Cashier
+        # Date, Txn ID, Cashier (20x3 = 60)
+        y += 60
+        # Add space for Order Type if not Normal
+        order_type_check = "Normal"
+        if not preview and transaction and len(transaction) > 10:
+            order_type_check = transaction[10]
+        elif preview:
+             order_type_check = "Dine In" # Preview defaults to show it
+             
+        if order_type_check and order_type_check.lower() != "normal":
+             y += 20
         y += 20 # Divider
         
         # Items
@@ -149,10 +159,12 @@ class ReceiptRenderer:
             txn_id = "PREVIEW-123456"
             date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
             cashier = "Admin"
+            order_type = "Dine In"
         else:
             txn_id = transaction[1]
             date_str = transaction[8][:16]
             cashier = transaction[9] if len(transaction) > 9 else "Cashier"
+            order_type = transaction[10] if len(transaction) > 10 else "Normal"
             
         draw_row(f"Date: {date_str}", "", self.font_mono, y)
         y += 20
@@ -160,6 +172,10 @@ class ReceiptRenderer:
         y += 20
         draw_row(f"Cashier: {cashier}", "", self.font_mono, y)
         y += 20
+        # Draw Order Type more prominently if possible, or just as a row
+        if order_type and order_type.lower() != "normal":
+             draw_row(f"Type: {order_type.upper()}", "", self.font_bold, y) # Bold for emphasis
+             y += 20
         
         # Divider
         draw.line([(self.padding, y + 10), (width - self.padding, y + 10)], fill="black", width=1)

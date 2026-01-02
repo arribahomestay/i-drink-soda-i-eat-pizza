@@ -83,6 +83,8 @@ class ModifiersPage:
             self.create_modifier_row(mod)
             
     def create_modifier_row(self, mod):
+        import tkinter as tk
+        
         # Row container with outline
         row = ctk.CTkFrame(
             self.content_frame, 
@@ -95,11 +97,29 @@ class ModifiersPage:
         row.pack(fill="x", pady=2)
         row.pack_propagate(False) # Fixed height
         
+        # Add right-click context menu
+        def show_modifier_menu(event):
+            menu = tk.Menu(row, tearoff=0, bg=COLORS["card_bg"], fg=COLORS["text_primary"],
+                          activebackground=COLORS["primary"], activeforeground="white",
+                          font=("Segoe UI", 10))
+            menu.add_command(label="👁️  View", command=lambda: self.view_modifier_dialog(mod))
+            menu.add_command(label="✏️  Edit", command=lambda: self.add_modifier_dialog(mod))
+            menu.add_command(label="📝 Rename", command=lambda: self.rename_modifier_dialog(mod))
+            menu.add_separator()
+            menu.add_command(label="🗑️  Delete", command=lambda: self.delete_modifier(mod[0]))
+            menu.post(event.x_root, event.y_root)
+        
+        row.bind("<Button-3>", show_modifier_menu)
+        
         # Name
-        ctk.CTkLabel(row, text=mod[1], font=ctk.CTkFont(size=12)).pack(side="left", padx=15, expand=True, anchor="w")
+        name_label = ctk.CTkLabel(row, text=mod[1], font=ctk.CTkFont(size=12))
+        name_label.pack(side="left", padx=15, expand=True, anchor="w")
+        name_label.bind("<Button-3>", show_modifier_menu)
         
         # Price
-        ctk.CTkLabel(row, text=f"{CURRENCY_SYMBOL}{mod[2]:.2f}", width=80, font=ctk.CTkFont(size=12, weight="bold"), text_color=COLORS["success"]).pack(side="left", padx=10)
+        price_label = ctk.CTkLabel(row, text=f"{CURRENCY_SYMBOL}{mod[2]:.2f}", width=80, font=ctk.CTkFont(size=12, weight="bold"), text_color=COLORS["success"])
+        price_label.pack(side="left", padx=10)
+        price_label.bind("<Button-3>", show_modifier_menu)
         
         # Linked Product (Simplified)
         linked_text = ""
@@ -107,12 +127,15 @@ class ModifiersPage:
             linked_name = mod[6] or "Unknown"
             deduct = mod[4]
             linked_text = f"📎 {linked_name} (x{deduct:g})"
-            
-        ctk.CTkLabel(row, text=linked_text, font=ctk.CTkFont(size=11), text_color=COLORS["text_secondary"]).pack(side="left", padx=10, expand=True, anchor="w")
+        
+        linked_label = ctk.CTkLabel(row, text=linked_text, font=ctk.CTkFont(size=11), text_color=COLORS["text_secondary"])
+        linked_label.pack(side="left", padx=10, expand=True, anchor="w")
+        linked_label.bind("<Button-3>", show_modifier_menu)
         
         # Actions (Minimalist)
         actions = ctk.CTkFrame(row, fg_color="transparent", width=80)
         actions.pack(side="right", padx=10)
+        actions.bind("<Button-3>", show_modifier_menu)
         
         # Edit
         ctk.CTkButton(
@@ -260,4 +283,231 @@ class ModifiersPage:
                 messagebox.showerror("Error", str(e))
         
         ctk.CTkButton(form_frame, text="Save Modifier", command=save, fg_color=COLORS["success"], height=40, font=ctk.CTkFont(size=14, weight="bold")).pack(fill="x", padx=20, pady=30)
+
+    def view_modifier_dialog(self, mod):
+        """Show compact modifier details view modal"""
+        import tkinter as tk
+        
+        dialog = ctk.CTkToplevel(self.parent)
+        dialog.title("Modifier Details")
+        dialog.geometry("500x650")
+        dialog.configure(fg_color=COLORS["dark"])
+        dialog.transient(self.parent)
+        dialog.grab_set()
+        
+        # Center
+        x = (dialog.winfo_screenwidth() - 500) // 2
+        y = (dialog.winfo_screenheight() - 650) // 2
+        dialog.geometry(f"+{x}+{y}")
+        
+        # Header
+        header = ctk.CTkFrame(dialog, fg_color=COLORS["primary"], corner_radius=0)
+        header.pack(fill="x")
+        
+        ctk.CTkLabel(
+            header,
+            text=mod[1],  # Modifier name
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color="white"
+        ).pack(pady=15)
+        
+        # Content
+        content = ctk.CTkScrollableFrame(dialog, fg_color="transparent")
+        content.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # Modifier details
+        details = [
+            ("Name", mod[1]),
+            ("Price", f"{CURRENCY_SYMBOL}{mod[2]:.2f}"),
+            ("Linked Product", mod[6] if mod[6] else "None"),
+            ("Deduct Quantity", f"{mod[4]:g}" if mod[4] else "1"),
+            ("Linked Stock", f"{mod[7]}" if len(mod) > 7 and mod[7] is not None else "N/A"),
+        ]
+        
+        for label, value in details:
+            row = ctk.CTkFrame(content, fg_color=COLORS["card_bg"], corner_radius=8)
+            row.pack(fill="x", pady=5)
+            
+            ctk.CTkLabel(
+                row,
+                text=label,
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color=COLORS["text_secondary"]
+            ).pack(side="left", padx=15, pady=10)
+            
+            ctk.CTkLabel(
+                row,
+                text=str(value),
+                font=ctk.CTkFont(size=12),
+                text_color=COLORS["text_primary"]
+            ).pack(side="right", padx=15, pady=10)
+        
+        # Show products that use this ingredient (if linked)
+        if mod[3]:  # If there's a linked_product_id
+            ingredient_id = mod[3]
+            
+            # Query database for products that use this ingredient
+            self.database.cursor.execute("""
+                SELECT p.id, p.name, pi.quantity
+                FROM product_ingredients pi
+                JOIN products p ON pi.product_id = p.id
+                WHERE pi.ingredient_id = ?
+                ORDER BY p.name
+            """, (ingredient_id,))
+            
+            products_using = self.database.cursor.fetchall()
+            
+            if products_using:
+                # Section header
+                ctk.CTkLabel(
+                    content,
+                    text=f"🔗 Used In Products ({len(products_using)})",
+                    font=ctk.CTkFont(size=14, weight="bold"),
+                    text_color=COLORS["info"]
+                ).pack(anchor="w", pady=(15, 10))
+                
+                # List of products
+                products_frame = ctk.CTkFrame(content, fg_color=COLORS["card_bg"], corner_radius=8)
+                products_frame.pack(fill="x", pady=5)
+                
+                for prod in products_using:
+                    prod_id, prod_name, qty_used = prod
+                    
+                    prod_row = ctk.CTkFrame(products_frame, fg_color=COLORS["dark"], corner_radius=5)
+                    prod_row.pack(fill="x", padx=10, pady=5)
+                    
+                    # Product name
+                    ctk.CTkLabel(
+                        prod_row,
+                        text=f"• {prod_name}",
+                        font=ctk.CTkFont(size=11, weight="bold"),
+                        text_color=COLORS["text_primary"]
+                    ).pack(side="left", padx=10, pady=8)
+                    
+                    # Quantity used
+                    ctk.CTkLabel(
+                        prod_row,
+                        text=f"Uses {qty_used:g}x",
+                        font=ctk.CTkFont(size=11),
+                        text_color=COLORS["text_secondary"]
+                    ).pack(side="right", padx=10, pady=8)
+            else:
+                # No products use this ingredient
+                ctk.CTkLabel(
+                    content,
+                    text="ℹ️ Not used in any products yet",
+                    font=ctk.CTkFont(size=12),
+                    text_color=COLORS["text_secondary"]
+                ).pack(anchor="w", pady=(15, 5))
+        
+        # Close button
+        ctk.CTkButton(
+            dialog,
+            text="Close",
+            command=dialog.destroy,
+            fg_color=COLORS["primary"],
+            hover_color=COLORS["secondary"],
+            width=150,
+            height=35,
+            font=ctk.CTkFont(size=13, weight="bold")
+        ).pack(pady=15)
+    
+    def rename_modifier_dialog(self, mod):
+        """Show dialog to rename modifier"""
+        import tkinter as tk
+        
+        dialog = ctk.CTkToplevel(self.parent)
+        dialog.title("Rename Modifier")
+        dialog.geometry("400x200")
+        dialog.configure(fg_color=COLORS["dark"])
+        dialog.transient(self.parent)
+        dialog.grab_set()
+        
+        # Center
+        x = (dialog.winfo_screenwidth() - 400) // 2
+        y = (dialog.winfo_screenheight() - 200) // 2
+        dialog.geometry(f"+{x}+{y}")
+        
+        # Header
+        ctk.CTkLabel(
+            dialog,
+            text=f"Rename Modifier",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color=COLORS["text_primary"]
+        ).pack(pady=(20, 10))
+        
+        # Current name
+        ctk.CTkLabel(
+            dialog,
+            text=f"Current: {mod[1]}",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_secondary"]
+        ).pack(pady=(0, 10))
+        
+        # Entry
+        entry_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        entry_frame.pack(fill="x", padx=30, pady=10)
+        
+        name_entry = ctk.CTkEntry(
+            entry_frame,
+            height=35,
+            font=ctk.CTkFont(size=13),
+            placeholder_text="New modifier name"
+        )
+        name_entry.pack(fill="x")
+        name_entry.insert(0, mod[1])
+        name_entry.select_range(0, tk.END)
+        name_entry.focus()
+        
+        # Buttons
+        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=30, pady=15)
+        
+        def save():
+            new_name = name_entry.get().strip()
+            if not new_name:
+                messagebox.showerror("Error", "Modifier name cannot be empty")
+                return
+            
+            if new_name == mod[1]:
+                dialog.destroy()
+                return
+            
+            try:
+                # Update modifier with new name, keeping other values
+                self.database.update_global_modifier(
+                    mod[0],  # id
+                    new_name,  # new name
+                    mod[2],  # price
+                    mod[3],  # linked_product_id
+                    mod[4]   # deduct_quantity
+                )
+                messagebox.showinfo("Success", f"Modifier renamed to '{new_name}'")
+                dialog.destroy()
+                self.load_modifiers()
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to rename: {str(e)}")
+        
+        ctk.CTkButton(
+            btn_frame,
+            text="Cancel",
+            command=dialog.destroy,
+            height=35,
+            width=120,
+            fg_color=COLORS["danger"],
+            hover_color="#c0392b",
+            font=ctk.CTkFont(size=12)
+        ).pack(side="left")
+        
+        ctk.CTkButton(
+            btn_frame,
+            text="Rename",
+            command=save,
+            height=35,
+            fg_color=COLORS["success"],
+            hover_color="#27ae60",
+            font=ctk.CTkFont(size=12, weight="bold")
+        ).pack(side="right", fill="x", expand=True, padx=(10, 0))
+        
+        name_entry.bind("<Return>", lambda e: save())
 

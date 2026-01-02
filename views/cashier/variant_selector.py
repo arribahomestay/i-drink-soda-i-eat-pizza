@@ -207,7 +207,28 @@ class VariantSelector:
         # Initial Updates
         qty_entry.bind("<KeyRelease>", lambda e: self.update_total())
         self.dialog.bind('<Return>', self.confirm_add)
-        qty_entry.focus()
+        
+        # Auto-select text when focused
+        def select_all_qty(event):
+            try:
+                qty_entry.select_range(0, 'end')
+                qty_entry.icursor('end')
+            except:
+                pass
+            return 'break'
+        
+        qty_entry.bind("<FocusIn>", select_all_qty)
+        
+        # Focus and select the quantity field
+        def focus_qty():
+            try:
+                if qty_entry.winfo_exists():
+                    qty_entry.focus()
+                    qty_entry.select_range(0, 'end')
+            except:
+                pass
+        
+        self.dialog.after(100, focus_qty)
         
         self.update_total()
         self.toggle_layout() # Apply initial state

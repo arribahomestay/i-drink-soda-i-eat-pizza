@@ -10,7 +10,7 @@ from receipt_renderer import ReceiptRenderer
 
 
 class PaymentDialog:
-    def __init__(self, parent, database, user_data, cart_items, total, subtotal, tax):
+    def __init__(self, parent, database, user_data, cart_items, total, subtotal, tax, order_type="Normal"):
         self.parent = parent
         self.database = database
         self.user_data = user_data
@@ -18,6 +18,7 @@ class PaymentDialog:
         self.total = total
         self.subtotal = subtotal
         self.tax = tax
+        self.order_type = order_type  # Store order type
     
     def show(self, on_success_callback):
         """Show payment dialog"""
@@ -43,12 +44,33 @@ class PaymentDialog:
         summary_frame = ctk.CTkFrame(dialog, fg_color=COLORS["card_bg"], corner_radius=15)
         summary_frame.pack(fill="x", padx=20, pady=(0, 20))
         
+        # Order Type Display
+        order_type_row = ctk.CTkFrame(summary_frame, fg_color="transparent")
+        order_type_row.pack(fill="x", padx=20, pady=(15, 5))
+        
+        ctk.CTkLabel(
+            order_type_row,
+            text="Order Type:",
+            font=ctk.CTkFont(size=13),
+            text_color=COLORS["text_secondary"]
+        ).pack(side="left")
+        
+        # Color based on order type
+        order_color = COLORS["primary"] if self.order_type == "Normal" else (COLORS["info"] if self.order_type == "Dine In" else COLORS["warning"])
+        
+        ctk.CTkLabel(
+            order_type_row,
+            text=self.order_type,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color=order_color
+        ).pack(side="right")
+        
         ctk.CTkLabel(
             summary_frame,
             text=f"Subtotal: {CURRENCY_SYMBOL}{self.subtotal:.2f}",
             font=ctk.CTkFont(size=14),
             text_color=COLORS["text_secondary"]
-        ).pack(pady=(15, 5), padx=20, anchor="w")
+        ).pack(pady=(5, 5), padx=20, anchor="w")
         
         ctk.CTkLabel(
             summary_frame,
@@ -110,7 +132,7 @@ class PaymentDialog:
             placeholder_text=f"Enter amount (min: {CURRENCY_SYMBOL}{self.total:.2f})"
         )
         amount_entry.pack(fill="x")
-        amount_entry.insert(0, f"{self.total:.2f}")
+        amount_entry.insert(0, "0")
         
         # Change display
         change_label = ctk.CTkLabel(
@@ -143,6 +165,14 @@ class PaymentDialog:
                 )
         
         amount_entry.bind("<KeyRelease>", calculate_change)
+        
+        # Auto-select text when focused
+        def select_all(event):
+            amount_entry.select_range(0, 'end')
+            amount_entry.icursor('end')
+            return 'break'
+        
+        amount_entry.bind("<FocusIn>", select_all)
         
         def process_payment():
             """Process the payment"""
@@ -190,7 +220,8 @@ class PaymentDialog:
                     payment_method=method,
                     payment_amount=tendered,
                     change_amount=change,
-                    tax_rate=TAX_RATE * 100
+                    tax_rate=TAX_RATE * 100,
+                    order_type=self.order_type  # Pass order type
                 )
                 
                 # Generate receipt
@@ -201,7 +232,8 @@ class PaymentDialog:
                 t_dummy = [
                     transaction_id, transaction_number, self.user_data['id'],
                     self.total, self.tax, 0, method, tendered,
-                    datetime.now().strftime('%Y-%m-%d %H:%M:%S'), self.user_data['full_name']
+                    datetime.now().strftime('%Y-%m-%d %H:%M:%S'), self.user_data['full_name'],
+                    self.order_type # Index 10
                 ]
                 
                 receipt_file = renderer.save_receipt(t_dummy, self.cart_items, folder="receipts")

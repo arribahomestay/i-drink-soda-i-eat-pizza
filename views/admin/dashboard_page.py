@@ -104,103 +104,323 @@ class DashboardPage:
                 text_color=color
             ).pack(pady=(0, 20), padx=20)
         
-        # Recent transactions
+        # Recent transactions - Sold Items Format
         recent_frame = ctk.CTkFrame(self.parent, fg_color=COLORS["card_bg"], corner_radius=15)
         recent_frame.pack(fill="both", expand=True, padx=30, pady=(0, 30))
         
         recent_header = ctk.CTkLabel(
             recent_frame,
-            text="Recent Transactions",
+            text="Recent Sales",
             font=ctk.CTkFont(size=18, weight="bold"),
             text_color=COLORS["text_primary"]
         )
         recent_header.pack(pady=20, padx=20, anchor="w")
         
-        # Transactions list container
-        transactions_list = ctk.CTkScrollableFrame(
+        # Sales items list container
+        sales_list = ctk.CTkScrollableFrame(
             recent_frame,
             fg_color="transparent",
             scrollbar_button_color=COLORS["primary"]
         )
-        transactions_list.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        sales_list.pack(fill="both", expand=True, padx=20, pady=(0, 20))
         
-        # Table Grid Config
-        transactions_list.grid_columnconfigure(0, weight=2) # Ref
-        transactions_list.grid_columnconfigure(1, weight=2) # Date
-        transactions_list.grid_columnconfigure(2, weight=2) # Cashier
-        transactions_list.grid_columnconfigure(3, weight=1) # Total
-        
-        # Headers
-        headers = ["Ref #", "Date & Time", "Cashier", "Total"]
-        for idx, h_text in enumerate(headers):
-             ctk.CTkLabel(
-                transactions_list,
-                text=h_text,
-                font=ctk.CTkFont(size=12, weight="bold"),
-                text_color=COLORS["text_secondary"]
-             ).grid(row=0, column=idx, sticky="ew", padx=5, pady=(0, 10))
-        
-        # Header Separator
-        ctk.CTkFrame(transactions_list, height=2, fg_color=COLORS["primary"]).grid(row=1, column=0, columnspan=4, sticky="ew", pady=(0, 5))
-        
-        transactions = self.database.get_transactions(10)
+        # Get recent transaction items (last 20 items sold)
+        transactions = self.database.get_transactions(20)
         
         if transactions:
-            for i, txn in enumerate(transactions):
-                row_idx = 2 + (i * 2)
+            item_count = 0
+            for txn in transactions:
+                items = self.database.get_transaction_items(txn[0])
                 
-                # Row Frame
-                row_frame = ctk.CTkFrame(transactions_list, fg_color="transparent")
-                row_frame.grid(row=row_idx, column=0, columnspan=4, sticky="ew")
-                row_frame.grid_columnconfigure(0, weight=2)
-                row_frame.grid_columnconfigure(1, weight=2)
-                row_frame.grid_columnconfigure(2, weight=2)
-                row_frame.grid_columnconfigure(3, weight=1)
+                for item in items:
+                    if item_count >= 20:  # Limit to 20 items
+                        break
+                    
+                    # transaction_items: id, txn_id, prod_id, product_name, quantity, unit_price, subtotal, variant_id, variant_name, modifiers
+                    product_name = item[3]
+                    qty = item[4]
+                    unit_price = item[5]
+                    subtotal = item[6]
+                    product_id = item[2]
+                    modifiers_str = item[9] if len(item) > 9 else None
+                    
+                    # Create clickable item card
+                    item_card = ctk.CTkFrame(sales_list, fg_color=COLORS["dark"], corner_radius=10, cursor="hand2")
+                    item_card.pack(fill="x", pady=5)
+                    
+                     # Make entire card clickable
+                    def make_clickable(card, pname, pid, q, price, sub, mods, o_type):
+                        def on_click(event=None):
+                            self.show_item_breakdown(pname, pid, q, price, sub, mods, o_type)
+                        card.bind("<Button-1>", on_click)
+                        card.bind("<Enter>", lambda e: card.configure(fg_color=COLORS["primary"]))
+                        card.bind("<Leave>", lambda e: card.configure(fg_color=COLORS["dark"]))
+                        return on_click
+                    
+                    # Order Type
+                    order_type = txn[7] if len(txn) > 7 else "Normal"
+                    if order_type is None: order_type = "Normal"
+
+                    click_handler = make_clickable(item_card, product_name, product_id, qty, unit_price, subtotal, modifiers_str, order_type)
+                    
+                    # Content frame
+                    content_frame = ctk.CTkFrame(item_card, fg_color="transparent")
+                    content_frame.pack(fill="x", padx=15, pady=12)
+                    content_frame.bind("<Button-1>", click_handler)
+                    
+                    # Left side: Sold text
+                    left_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
+                    left_frame.pack(side="left", fill="x", expand=True)
+                    left_frame.bind("<Button-1>", click_handler)
+                    
+                    sold_label = ctk.CTkLabel(
+                        left_frame,
+                        text=f"Sold {qty}x {product_name}",
+                        font=ctk.CTkFont(size=14, weight="bold"),
+                        text_color=COLORS["text_primary"],
+                        anchor="w"
+                    )
+                    sold_label.pack(side="left")
+                    sold_label.bind("<Button-1>", click_handler)
+                    
+                    # Right side: Price
+                    price_label = ctk.CTkLabel(
+                        content_frame,
+                        text=f"{CURRENCY_SYMBOL}{subtotal:.2f}",
+                        font=ctk.CTkFont(size=14, weight="bold"),
+                        text_color=COLORS["success"]
+                    )
+                    price_label.pack(side="right")
+                    price_label.bind("<Button-1>", click_handler)
+                    
+                    
+                    type_color = COLORS["info"] if order_type == "Dine In" else (COLORS["warning"] if order_type == "Take Out" else COLORS["text_secondary"])
+                    
+                    type_label = ctk.CTkLabel(
+                        content_frame,
+                        text=order_type,
+                        font=ctk.CTkFont(size=11, weight="bold"),
+                        text_color=type_color
+                    )
+                    type_label.pack(side="right", padx=15)
+                    type_label.bind("<Button-1>", click_handler)
+                    
+                    item_count += 1
                 
-                # Bind click to row
-                def on_click(e, tid=txn[0]): self.show_transaction_details(tid)
-                row_frame.bind("<Button-1>", on_click)
-                
-                # Ref
-                l1 = ctk.CTkLabel(row_frame, text=f"#{txn[1]}", font=ctk.CTkFont(size=12), text_color=COLORS["text_primary"])
-                l1.grid(row=0, column=0, sticky="w", padx=5, pady=5)
-                l1.bind("<Button-1>", on_click)
-                
-                # Date (Manila Time)
-                date_str = self.format_date_mnl(txn[8])
-                l2 = ctk.CTkLabel(row_frame, text=date_str, font=ctk.CTkFont(size=12))
-                l2.grid(row=0, column=1, sticky="w", padx=5, pady=5)
-                l2.bind("<Button-1>", on_click)
-                
-                # Cashier
-                l3 = ctk.CTkLabel(row_frame, text=txn[9], font=ctk.CTkFont(size=12))
-                l3.grid(row=0, column=2, sticky="w", padx=5, pady=5)
-                l3.bind("<Button-1>", on_click)
-                
-                # Total
-                display_total = txn[3] - (txn[4] or 0)
-                l4 = ctk.CTkLabel(
-                    row_frame,
-                    text=f"{CURRENCY_SYMBOL}{display_total:.2f}",
-                    font=ctk.CTkFont(size=12, weight="bold"),
-                    text_color=COLORS["success"]
-                )
-                l4.grid(row=0, column=3, sticky="e", padx=20, pady=5)
-                l4.bind("<Button-1>", on_click)
-                
-                # Row Separator
-                sep_idx = row_idx + 1
-                ctk.CTkFrame(transactions_list, height=1, fg_color="#2c3e50").grid(row=sep_idx, column=0, columnspan=4, sticky="ew", pady=(0, 0))
-                
+                if item_count >= 20:
+                    break
         else:
             ctk.CTkLabel(
-                transactions_list,
-                text="No transactions yet",
+                sales_list,
+                text="No sales yet",
                 font=ctk.CTkFont(size=13),
                 text_color=COLORS["text_secondary"]
-            ).grid(row=2, column=0, columnspan=4, pady=30)
+            ).pack(pady=30)
+
+
+    def show_item_breakdown(self, product_name, product_id, quantity, unit_price, subtotal, modifiers_str, order_type="Normal"):
+        """Show detailed breakdown modal for a sold item with ingredients, add-ons, and prices"""
+        import json
+        
+        # Modal
+        dialog = ctk.CTkToplevel(self.parent)
+        dialog.title(f"Item Breakdown")
+        dialog.geometry("600x700")
+        dialog.configure(fg_color=COLORS["dark"])
+        dialog.transient(self.parent)
+        dialog.grab_set()
+        
+        # Center
+        x = (dialog.winfo_screenwidth() - 600) // 2
+        y = (dialog.winfo_screenheight() - 700) // 2
+        dialog.geometry(f"+{x}+{y}")
+        
+        # Header
+        header = ctk.CTkFrame(dialog, fg_color=COLORS["primary"], corner_radius=0)
+        header.pack(fill="x")
+        
+        ctk.CTkLabel(
+            header, 
+            text=f"Sold {quantity}x {product_name}", 
+            font=ctk.CTkFont(size=20, weight="bold"),
+            text_color="white"
+        ).pack(pady=(20, 5))
+        
+        # Order Type Badge
+        o_color = COLORS["info"] if order_type == "Dine In" else (COLORS["warning"] if order_type == "Take Out" else "#95a5a6")
+        ctk.CTkLabel(
+            header,
+            text=order_type.upper(),
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=o_color
+        ).pack(pady=(0, 20))
+        
+        # Content
+        content = ctk.CTkScrollableFrame(dialog, fg_color="transparent")
+        content.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # Product Price Section
+        price_card = ctk.CTkFrame(content, fg_color=COLORS["card_bg"], corner_radius=10)
+        price_card.pack(fill="x", pady=(0, 15))
+        
+        ctk.CTkLabel(
+            price_card,
+            text="💰 Product Price",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=COLORS["primary"]
+        ).pack(pady=(15, 5), padx=15, anchor="w")
+        
+        price_frame = ctk.CTkFrame(price_card, fg_color="transparent")
+        price_frame.pack(fill="x", padx=15, pady=(0, 15))
+        
+        ctk.CTkLabel(
+            price_frame,
+            text=f"Unit Price:",
+            font=ctk.CTkFont(size=13),
+            text_color=COLORS["text_secondary"]
+        ).pack(side="left")
+        
+        ctk.CTkLabel(
+            price_frame,
+            text=f"{CURRENCY_SYMBOL}{unit_price:.2f}",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color=COLORS["text_primary"]
+        ).pack(side="right")
+        
+        # Ingredients Section
+        ingredients = self.database.get_product_ingredients(product_id)
+        
+        if ingredients:
+            ing_card = ctk.CTkFrame(content, fg_color=COLORS["card_bg"], corner_radius=10)
+            ing_card.pack(fill="x", pady=(0, 15))
+            
+            ctk.CTkLabel(
+                ing_card,
+                text="🥗 Linked Ingredients Used",
+                font=ctk.CTkFont(size=14, weight="bold"),
+                text_color=COLORS["info"]
+            ).pack(pady=(15, 10), padx=15, anchor="w")
+            
+            for ing in ingredients:
+                # get_product_ingredients returns: id, ingredient_id, name, quantity, price, cost
+                ing_id = ing[0]
+                ingredient_id = ing[1]
+                ing_name = ing[2]           # Ingredient name (was incorrectly ing[3])
+                qty_per_unit = ing[3]       # Quantity per unit (was incorrectly ing[4])
+                ing_unit_price = ing[4]     # Unit price of ingredient
+                
+                total_qty_used = qty_per_unit * quantity
+                total_cost = ing_unit_price * total_qty_used if ing_unit_price else 0
+                
+                ing_row = ctk.CTkFrame(ing_card, fg_color=COLORS["dark"], corner_radius=5)
+                ing_row.pack(fill="x", padx=15, pady=5)
+                
+                # Left: Name and quantity
+                left = ctk.CTkFrame(ing_row, fg_color="transparent")
+                left.pack(side="left", fill="x", expand=True, padx=10, pady=8)
+                
+                ctk.CTkLabel(
+                    left,
+                    text=f"• {ing_name}",
+                    font=ctk.CTkFont(size=12, weight="bold"),
+                    text_color=COLORS["text_primary"]
+                ).pack(anchor="w")
+                
+                ctk.CTkLabel(
+                    left,
+                    text=f"  {qty_per_unit} per unit × {quantity} = {total_qty_used} total",
+                    font=ctk.CTkFont(size=11),
+                    text_color=COLORS["text_secondary"]
+                ).pack(anchor="w")
+                
+                # Right: Cost (always show with peso sign)
+                ctk.CTkLabel(
+                    ing_row,
+                    text=f"{CURRENCY_SYMBOL}{total_cost:.2f}",
+                    font=ctk.CTkFont(size=12, weight="bold"),
+                    text_color=COLORS["warning"]
+                ).pack(side="right", padx=10, pady=8)
+        
+        # Add-ons/Modifiers Section
+        if modifiers_str:
+            try:
+                mods = json.loads(modifiers_str)
+                if mods:
+                    mod_card = ctk.CTkFrame(content, fg_color=COLORS["card_bg"], corner_radius=10)
+                    mod_card.pack(fill="x", pady=(0, 15))
+                    
+                    ctk.CTkLabel(
+                        mod_card,
+                        text="➕ Add-ons / Modifiers",
+                        font=ctk.CTkFont(size=14, weight="bold"),
+                        text_color=COLORS["success"]
+                    ).pack(pady=(15, 10), padx=15, anchor="w")
+                    
+                    for mod in mods:
+                        m_name = mod.get('name', 'Unknown')
+                        m_qty = mod.get('quantity', 1)
+                        m_price = mod.get('price', 0)
+                        
+                        mod_row = ctk.CTkFrame(mod_card, fg_color=COLORS["dark"], corner_radius=5)
+                        mod_row.pack(fill="x", padx=15, pady=5)
+                        
+                        # Left: Name and quantity
+                        left = ctk.CTkFrame(mod_row, fg_color="transparent")
+                        left.pack(side="left", fill="x", expand=True, padx=10, pady=8)
+                        
+                        ctk.CTkLabel(
+                            left,
+                            text=f"• {m_qty}x {m_name}",
+                            font=ctk.CTkFont(size=12, weight="bold"),
+                            text_color=COLORS["text_primary"]
+                        ).pack(anchor="w")
+                        
+                        # Right: Price
+                        if m_price > 0:
+                            ctk.CTkLabel(
+                                mod_row,
+                                text=f"+{CURRENCY_SYMBOL}{m_price:.2f}",
+                                font=ctk.CTkFont(size=12, weight="bold"),
+                                text_color=COLORS["success"]
+                            ).pack(side="right", padx=10, pady=8)
+            except:
+                pass
+        
+        # Total Section
+        total_card = ctk.CTkFrame(content, fg_color=COLORS["primary"], corner_radius=10)
+        total_card.pack(fill="x", pady=(10, 0))
+        
+        total_frame = ctk.CTkFrame(total_card, fg_color="transparent")
+        total_frame.pack(fill="x", padx=20, pady=15)
+        
+        ctk.CTkLabel(
+            total_frame,
+            text="Total Amount:",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color="white"
+        ).pack(side="left")
+        
+        ctk.CTkLabel(
+            total_frame,
+            text=f"{CURRENCY_SYMBOL}{subtotal:.2f}",
+            font=ctk.CTkFont(size=20, weight="bold"),
+            text_color="white"
+        ).pack(side="right")
+        
+        # Close button
+        ctk.CTkButton(
+            dialog, 
+            text="Close", 
+            command=dialog.destroy, 
+            fg_color=COLORS["danger"],
+            hover_color="#c0392b",
+            width=150,
+            height=40,
+            font=ctk.CTkFont(size=14, weight="bold")
+        ).pack(pady=20)
 
     def show_transaction_details(self, transaction_id):
+
         """Show transaction details modal with item breakdown (modifiers/ingredients)"""
         import json
         

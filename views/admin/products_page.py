@@ -119,9 +119,26 @@ class ProductsPage:
         )
         self.selected_category_label.pack(side="left")
     
-        # Product search bar (right side of header)
+        # Product search bar and filter (right side of header)
         product_search_frame = ctk.CTkFrame(self.products_header_frame, fg_color="transparent")
         product_search_frame.pack(side="right", padx=(10, 0))
+        
+        # Filter button
+        self.filter_btn = ctk.CTkButton(
+            product_search_frame,
+            text="🔽",
+            width=35,
+            height=32,
+            command=self.show_filter_menu,
+            font=ctk.CTkFont(size=14),
+            fg_color=COLORS["primary"],
+            hover_color=COLORS["secondary"],
+            corner_radius=5
+        )
+        self.filter_btn.pack(side="right", padx=(5, 0))
+        
+        # Current filter state
+        self.current_filter = None  # None, 'a-z', or 'low_stock'
         
         self.product_search_var = ctk.StringVar()
         self.product_search_var.trace("w", self.search_products)
@@ -250,6 +267,101 @@ class ProductsPage:
         if category is None: return
         self.context_category = category
         self.category_menu.post(event.x_root, event.y_root)
+    
+    def show_filter_menu(self):
+        """Show filter dropdown menu"""
+        menu = tk.Menu(self.filter_btn, tearoff=0, bg=COLORS["card_bg"], fg=COLORS["text_primary"],
+                      activebackground=COLORS["primary"], activeforeground="white",
+                      font=("Segoe UI", 10))
+        
+        # Sorting options
+        menu.add_command(label="🔤 Sort A-Z", command=self.filter_a_to_z)
+        menu.add_command(label="💰 Price: High to Low", command=self.filter_price_high)
+        menu.add_command(label="💰 Price: Low to High", command=self.filter_price_low)
+        menu.add_separator()
+        
+        # Stock filters
+        menu.add_command(label="📉 Low Stocks", command=self.filter_low_stock)
+        menu.add_command(label="📦 Out of Stock", command=self.filter_out_of_stock)
+        menu.add_separator()
+        
+        # Product type filters
+        menu.add_command(label="🏷️ Stock Tracked Items", command=self.filter_stock_tracked)
+        menu.add_command(label="🏷️ Made-to-Order Items", command=self.filter_made_to_order)
+        menu.add_separator()
+        
+        # Date & Profit filters
+        menu.add_command(label="📅 Recently Added", command=self.filter_recently_added)
+        menu.add_command(label="💵 High Markup (>50%)", command=self.filter_high_markup)
+        menu.add_separator()
+        
+        # Clear filter
+        menu.add_command(label="✖️  Clear Filter", command=self.clear_filter)
+        
+        # Get button position
+        x = self.filter_btn.winfo_rootx()
+        y = self.filter_btn.winfo_rooty() + self.filter_btn.winfo_height()
+        menu.post(x, y)
+    
+    def filter_a_to_z(self):
+        """Apply A-Z sorting filter"""
+        self.current_filter = 'a-z'
+        self.filter_btn.configure(text="🔤", fg_color=COLORS["success"])
+        self.load_products_for_category(self.selected_category)
+    
+    def filter_price_high(self):
+        """Apply price high to low filter"""
+        self.current_filter = 'price_high'
+        self.filter_btn.configure(text="💰↓", fg_color=COLORS["success"])
+        self.load_products_for_category(self.selected_category)
+    
+    def filter_price_low(self):
+        """Apply price low to high filter"""
+        self.current_filter = 'price_low'
+        self.filter_btn.configure(text="💰↑", fg_color=COLORS["success"])
+        self.load_products_for_category(self.selected_category)
+    
+    def filter_low_stock(self):
+        """Apply low stock filter"""
+        self.current_filter = 'low_stock'
+        self.filter_btn.configure(text="📉", fg_color=COLORS["warning"])
+        self.load_products_for_category(self.selected_category)
+    
+    def filter_out_of_stock(self):
+        """Apply out of stock filter"""
+        self.current_filter = 'out_of_stock'
+        self.filter_btn.configure(text="📦", fg_color=COLORS["danger"])
+        self.load_products_for_category(self.selected_category)
+    
+    def filter_stock_tracked(self):
+        """Show only stock tracked items"""
+        self.current_filter = 'stock_tracked'
+        self.filter_btn.configure(text="🏷️📊", fg_color=COLORS["info"])
+        self.load_products_for_category(self.selected_category)
+    
+    def filter_made_to_order(self):
+        """Show only made-to-order items"""
+        self.current_filter = 'made_to_order'
+        self.filter_btn.configure(text="🏷️🍔", fg_color=COLORS["info"])
+        self.load_products_for_category(self.selected_category)
+    
+    def filter_recently_added(self):
+        """Show recently added products (last 30 days)"""
+        self.current_filter = 'recently_added'
+        self.filter_btn.configure(text="📅", fg_color=COLORS["info"])
+        self.load_products_for_category(self.selected_category)
+    
+    def filter_high_markup(self):
+        """Show products with markup > 50%"""
+        self.current_filter = 'high_markup'
+        self.filter_btn.configure(text="💵", fg_color=COLORS["success"])
+        self.load_products_for_category(self.selected_category)
+    
+    def clear_filter(self):
+        """Clear all filters"""
+        self.current_filter = None
+        self.filter_btn.configure(text="🔽", fg_color=COLORS["primary"])
+        self.load_products_for_category(self.selected_category)
 
     def mark_as_item(self):
         """Mark specific category as Item (visible in POS)"""
@@ -422,6 +534,8 @@ class ProductsPage:
     
     def load_products_for_category(self, category):
         """Load products for selected category"""
+        from datetime import datetime, timedelta
+        
         # Clear existing products
         for widget in self.products_display_frame.winfo_children():
             widget.destroy()
@@ -433,10 +547,118 @@ class ProductsPage:
         else:
             products = all_products
         
+        # Apply filters
+        if self.current_filter == 'a-z':
+            # Sort by name (index 1)
+            products = sorted(products, key=lambda p: p[1].lower())
+            
+        elif self.current_filter == 'price_high':
+            # Sort by price high to low (index 3)
+            products = sorted(products, key=lambda p: p[3], reverse=True)
+            
+        elif self.current_filter == 'price_low':
+            # Sort by price low to high (index 3)
+            products = sorted(products, key=lambda p: p[3])
+            
+        elif self.current_filter == 'low_stock':
+            # Filter only products with stock tracking enabled and stock < 10
+            filtered = []
+            for p in products:
+                use_stock_tracking = 1
+                if len(p) > 12 and p[12] is not None:
+                    try: use_stock_tracking = int(p[12])
+                    except: use_stock_tracking = 1
+                
+                if use_stock_tracking == 1 and p[4] < 10:  # Stock tracking enabled and stock < 10
+                    filtered.append(p)
+            products = filtered
+            
+        elif self.current_filter == 'out_of_stock':
+            # Filter only products with stock = 0
+            filtered = []
+            for p in products:
+                use_stock_tracking = 1
+                if len(p) > 12 and p[12] is not None:
+                    try: use_stock_tracking = int(p[12])
+                    except: use_stock_tracking = 1
+                
+                if use_stock_tracking == 1 and p[4] == 0:  # Stock tracking enabled and stock = 0
+                    filtered.append(p)
+            products = filtered
+            
+        elif self.current_filter == 'stock_tracked':
+            # Filter only stock tracked items
+            filtered = []
+            for p in products:
+                use_stock_tracking = 1
+                if len(p) > 12 and p[12] is not None:
+                    try: use_stock_tracking = int(p[12])
+                    except: use_stock_tracking = 1
+                
+                if use_stock_tracking == 1:
+                    filtered.append(p)
+            products = filtered
+            
+        elif self.current_filter == 'made_to_order':
+            # Filter only made-to-order items (availability mode)
+            filtered = []
+            for p in products:
+                use_stock_tracking = 1
+                if len(p) > 12 and p[12] is not None:
+                    try: use_stock_tracking = int(p[12])
+                    except: use_stock_tracking = 1
+                
+                if use_stock_tracking == 0:  # Availability mode
+                    filtered.append(p)
+            products = filtered
+            
+        elif self.current_filter == 'recently_added':
+            # Filter products added in last 30 days
+            filtered = []
+            cutoff_date = datetime.now() - timedelta(days=30)
+            for p in products:
+                if len(p) > 7 and p[7]:  # created_at is at index 7
+                    try:
+                        created_at = datetime.strptime(p[7], "%Y-%m-%d %H:%M:%S")
+                        if created_at >= cutoff_date:
+                            filtered.append(p)
+                    except:
+                        pass
+            products = sorted(filtered, key=lambda p: p[7], reverse=True)  # Newest first
+            
+        elif self.current_filter == 'high_markup':
+            # Filter products with markup > 50%
+            filtered = []
+            for p in products:
+                markup = 0
+                if len(p) > 10 and p[10] is not None:
+                    try: markup = float(p[10])
+                    except: markup = 0
+                
+                if markup > 50:
+                    filtered.append(p)
+            products = sorted(filtered, key=lambda p: p[10] if len(p) > 10 else 0, reverse=True)
+        
+        # Empty state messages
         if not products:
+            msg = "No products in this category\nClick '+ Add Product' to add one"
+            
+            if self.current_filter == 'low_stock':
+                msg = "No low stock products found"
+            elif self.current_filter == 'out_of_stock':
+                msg = "No out of stock products found"
+            elif self.current_filter == 'stock_tracked':
+                msg = "No stock tracked products found"
+            elif self.current_filter == 'made_to_order':
+                msg = "No made-to-order products found"
+            elif self.current_filter == 'recently_added':
+                msg = "No products added in the last 30 days"
+            elif self.current_filter == 'high_markup':
+                msg = "No products with markup > 50% found"
+            
             ctk.CTkLabel(
                 self.products_display_frame,
-                text="No products in this category\nClick '+ Add Product' to add one",
+                text=msg,
                 font=ctk.CTkFont(size=14),
                 text_color=COLORS["text_secondary"]
             ).pack(pady=50)
@@ -453,9 +675,25 @@ class ProductsPage:
         card.pack(fill="x", pady=1, padx=0)
         card.pack_propagate(False)
         
+        # Add right-click context menu
+        def show_product_menu(event):
+            self.context_product = product
+            menu = tk.Menu(card, tearoff=0, bg=COLORS["card_bg"], fg=COLORS["text_primary"], 
+                          activebackground=COLORS["primary"], activeforeground="white",
+                          font=("Segoe UI", 10))
+            menu.add_command(label="👁️  View", command=lambda: self.view_product_dialog(product))
+            menu.add_command(label="✏️  Edit", command=lambda: self.edit_product_dialog(product))
+            menu.add_command(label="📝 Rename", command=lambda: self.rename_product_dialog(product))
+            menu.add_separator()
+            menu.add_command(label="🗑️  Delete", command=lambda: self.delete_product(product))
+            menu.post(event.x_root, event.y_root)
+        
+        card.bind("<Button-3>", show_product_menu)
+        
         # Left: Name and Info (simple horizontal layout)
         left_frame = ctk.CTkFrame(card, fg_color="transparent")
         left_frame.pack(side="left", fill="both", expand=True, padx=8, pady=4)
+        left_frame.bind("<Button-3>", show_product_menu)
         
         # Product Name (simple text)
         name_label = ctk.CTkLabel(
@@ -466,6 +704,7 @@ class ProductsPage:
             anchor="w"
         )
         name_label.pack(side="left", padx=(0, 15))
+        name_label.bind("<Button-3>", show_product_menu)
         
         # Category (simple text, no badge)
         if product[2]:
@@ -477,6 +716,7 @@ class ProductsPage:
                 anchor="w"
             )
             cat_label.pack(side="left", padx=(0, 10))
+            cat_label.bind("<Button-3>", show_product_menu)
         
         # Barcode (simple text)
         if product[5]:
@@ -487,10 +727,12 @@ class ProductsPage:
                 text_color=COLORS["text_secondary"]
             )
             barcode_label.pack(side="left", padx=(0, 10))
+            barcode_label.bind("<Button-3>", show_product_menu)
 
         # Right: Details & Actions
         right_frame = ctk.CTkFrame(card, fg_color="transparent")
         right_frame.pack(side="right", fill="y", padx=8, pady=4)
+        right_frame.bind("<Button-3>", show_product_menu)
         
         # Stock with Unit OR Availability Status
         # Indices: use_stock_tracking=12, is_available=13
@@ -529,6 +771,7 @@ class ProductsPage:
              anchor="e"
         )
         stock_label.pack(side="left", padx=(0, 15))
+        stock_label.bind("<Button-3>", show_product_menu)
 
         # Price (simple text)
         price_label = ctk.CTkLabel(
@@ -538,6 +781,7 @@ class ProductsPage:
             text_color=COLORS["success"]
         )
         price_label.pack(side="left", padx=(0, 10))
+        price_label.bind("<Button-3>", show_product_menu)
         
         # Actions (simple buttons)
         edit_btn = ctk.CTkButton(
@@ -1890,3 +2134,193 @@ class ProductsPage:
                 self.switch_page("products")
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to delete product: {str(e)}")
+    
+    def view_product_dialog(self, product):
+        """Show compact product details view modal"""
+        dialog = ctk.CTkToplevel(self.parent)
+        dialog.title("Product Details")
+        dialog.geometry("500x600")
+        dialog.configure(fg_color=COLORS["dark"])
+        dialog.transient(self.parent)
+        dialog.grab_set()
+        
+        # Center
+        x = (dialog.winfo_screenwidth() - 500) // 2
+        y = (dialog.winfo_screenheight() - 600) // 2
+        dialog.geometry(f"+{x}+{y}")
+        
+        # Header
+        header = ctk.CTkFrame(dialog, fg_color=COLORS["primary"], corner_radius=0)
+        header.pack(fill="x")
+        
+        ctk.CTkLabel(
+            header,
+            text=product[1],  # Product name
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color="white"
+        ).pack(pady=15)
+        
+        # Content
+        content = ctk.CTkScrollableFrame(dialog, fg_color="transparent")
+        content.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # Product details
+        details = [
+            ("Category", product[2] if product[2] else "N/A"),
+            ("Price", f"{CURRENCY_SYMBOL}{product[3]:.2f}"),
+            ("Stock", f"{product[4]} {product[8] if len(product) > 8 else 'pcs'}"),
+            ("Barcode", product[5] if product[5] else "N/A"),
+            ("Cost", f"{CURRENCY_SYMBOL}{product[9]:.2f}" if len(product) > 9 else "N/A"),
+            ("Markup", f"{product[10]:.1f}%" if len(product) > 10 else "N/A"),
+        ]
+        
+        for label, value in details:
+            row = ctk.CTkFrame(content, fg_color=COLORS["card_bg"], corner_radius=8)
+            row.pack(fill="x", pady=5)
+            
+            ctk.CTkLabel(
+                row,
+                text=label,
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color=COLORS["text_secondary"]
+            ).pack(side="left", padx=15, pady=10)
+            
+            ctk.CTkLabel(
+                row,
+                text=str(value),
+                font=ctk.CTkFont(size=12),
+                text_color=COLORS["text_primary"]
+            ).pack(side="right", padx=15, pady=10)
+        
+        # Description
+        if product[6]:
+            desc_frame = ctk.CTkFrame(content, fg_color=COLORS["card_bg"], corner_radius=8)
+            desc_frame.pack(fill="x", pady=5)
+            
+            ctk.CTkLabel(
+                desc_frame,
+                text="Description",
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color=COLORS["text_secondary"]
+            ).pack(anchor="w", padx=15, pady=(10, 5))
+            
+            ctk.CTkLabel(
+                desc_frame,
+                text=product[6],
+                font=ctk.CTkFont(size=11),
+                text_color=COLORS["text_primary"],
+                wraplength=450,
+                justify="left"
+            ).pack(anchor="w", padx=15, pady=(0, 10))
+        
+        # Close button
+        ctk.CTkButton(
+            dialog,
+            text="Close",
+            command=dialog.destroy,
+            fg_color=COLORS["primary"],
+            hover_color=COLORS["secondary"],
+            width=150,
+            height=35,
+            font=ctk.CTkFont(size=13, weight="bold")
+        ).pack(pady=15)
+    
+    def rename_product_dialog(self, product):
+        """Show dialog to rename product"""
+        dialog = ctk.CTkToplevel(self.parent)
+        dialog.title("Rename Product")
+        dialog.geometry("400x200")
+        dialog.configure(fg_color=COLORS["dark"])
+        dialog.transient(self.parent)
+        dialog.grab_set()
+        
+        # Center
+        x = (dialog.winfo_screenwidth() - 400) // 2
+        y = (dialog.winfo_screenheight() - 200) // 2
+        dialog.geometry(f"+{x}+{y}")
+        
+        # Header
+        ctk.CTkLabel(
+            dialog,
+            text=f"Rename Product",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color=COLORS["text_primary"]
+        ).pack(pady=(20, 10))
+        
+        # Current name
+        ctk.CTkLabel(
+            dialog,
+            text=f"Current: {product[1]}",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_secondary"]
+        ).pack(pady=(0, 10))
+        
+        # Entry
+        entry_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        entry_frame.pack(fill="x", padx=30, pady=10)
+        
+        name_entry = ctk.CTkEntry(
+            entry_frame,
+            height=35,
+            font=ctk.CTkFont(size=13),
+            placeholder_text="New product name"
+        )
+        name_entry.pack(fill="x")
+        name_entry.insert(0, product[1])
+        name_entry.select_range(0, tk.END)
+        name_entry.focus()
+        
+        # Buttons
+        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=30, pady=15)
+        
+        def save():
+            new_name = name_entry.get().strip()
+            if not new_name:
+                messagebox.showerror("Error", "Product name cannot be empty")
+                return
+            
+            if new_name == product[1]:
+                dialog.destroy()
+                return
+            
+            try:
+                # Update product with new name
+                self.database.update_product(
+                    product[0], new_name, product[2], product[3], product[4],
+                    product[5], product[6],
+                    product[8] if len(product) > 8 else "pcs",
+                    product[9] if len(product) > 9 else 0,
+                    product[10] if len(product) > 10 else 0,
+                    product[11] if len(product) > 11 else None,
+                    product[12] if len(product) > 12 else 1,
+                    product[13] if len(product) > 13 else 1
+                )
+                messagebox.showinfo("Success", f"Product renamed to '{new_name}'")
+                dialog.destroy()
+                self.switch_page("products")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to rename: {str(e)}")
+        
+        ctk.CTkButton(
+            btn_frame,
+            text="Cancel",
+            command=dialog.destroy,
+            height=35,
+            width=120,
+            fg_color=COLORS["danger"],
+            hover_color="#c0392b",
+            font=ctk.CTkFont(size=12)
+        ).pack(side="left")
+        
+        ctk.CTkButton(
+            btn_frame,
+            text="Rename",
+            command=save,
+            height=35,
+            fg_color=COLORS["success"],
+            hover_color="#27ae60",
+            font=ctk.CTkFont(size=12, weight="bold")
+        ).pack(side="right", fill="x", expand=True, padx=(10, 0))
+        
+        name_entry.bind("<Return>", lambda e: save())

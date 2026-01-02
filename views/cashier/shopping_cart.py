@@ -33,6 +33,64 @@ class ShoppingCart:
         )
         cart_header.pack(pady=(20, 10), padx=20, anchor="w")
         
+        # Order Type Selection
+        order_type_frame = ctk.CTkFrame(right_panel, fg_color=COLORS["dark"], corner_radius=10)
+        order_type_frame.pack(fill="x", padx=20, pady=(0, 10))
+        
+        # Order type state
+        self.order_type = "Normal"  # Default: Normal, Dine In, Take Out
+        
+        # Order type label
+        ctk.CTkLabel(
+            order_type_frame,
+            text="Order Type:",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=COLORS["text_secondary"]
+        ).pack(side="left", padx=(15, 10), pady=10)
+        
+        # Order type buttons
+        btn_container = ctk.CTkFrame(order_type_frame, fg_color="transparent")
+        btn_container.pack(side="left", fill="x", expand=True, padx=(0, 15), pady=8)
+        
+        self.normal_btn = ctk.CTkButton(
+            btn_container,
+            text="Normal",
+            command=lambda: self.set_order_type("Normal"),
+            height=30,
+            width=90,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            fg_color=COLORS["primary"],
+            hover_color=COLORS["secondary"],
+            corner_radius=6
+        )
+        self.normal_btn.pack(side="left", padx=2)
+        
+        self.dinein_btn = ctk.CTkButton(
+            btn_container,
+            text="Dine In",
+            command=lambda: self.set_order_type("Dine In"),
+            height=30,
+            width=90,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            fg_color=COLORS["card_bg"],
+            hover_color=COLORS["secondary"],
+            corner_radius=6
+        )
+        self.dinein_btn.pack(side="left", padx=2)
+        
+        self.takeout_btn = ctk.CTkButton(
+            btn_container,
+            text="Take Out",
+            command=lambda: self.set_order_type("Take Out"),
+            height=30,
+            width=90,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            fg_color=COLORS["card_bg"],
+            hover_color=COLORS["secondary"],
+            corner_radius=6
+        )
+        self.takeout_btn.pack(side="left", padx=2)
+        
         # Cart items
         self.cart_frame = ctk.CTkScrollableFrame(
             right_panel,
@@ -270,3 +328,26 @@ class ShoppingCart:
     def get_total(self):
         """Get cart total"""
         return sum(item['subtotal'] for item in self.cart_items)
+    
+    def set_order_type(self, order_type):
+        """Set the order type and update button states"""
+        self.order_type = order_type
+        
+        # Update button colors to show selection
+        if order_type == "Normal":
+            self.normal_btn.configure(fg_color=COLORS["primary"])
+            self.dinein_btn.configure(fg_color=COLORS["card_bg"])
+            self.takeout_btn.configure(fg_color=COLORS["card_bg"])
+        elif order_type == "Dine In":
+            self.normal_btn.configure(fg_color=COLORS["card_bg"])
+            self.dinein_btn.configure(fg_color=COLORS["info"])
+            self.takeout_btn.configure(fg_color=COLORS["card_bg"])
+        elif order_type == "Take Out":
+            self.normal_btn.configure(fg_color=COLORS["card_bg"])
+            self.dinein_btn.configure(fg_color=COLORS["card_bg"])
+            self.takeout_btn.configure(fg_color=COLORS["warning"])
+    
+    def get_order_type(self):
+        """Get the current order type"""
+        return self.order_type
+

@@ -53,6 +53,7 @@ class Database:
                 tax_amount REAL DEFAULT 0,
                 discount_amount REAL DEFAULT 0,
                 payment_method TEXT,
+                order_type TEXT DEFAULT 'Normal',
                 status TEXT DEFAULT 'completed',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (cashier_id) REFERENCES users(id)
@@ -264,6 +265,11 @@ class Database:
         # Migration: Add supplier_id to products
         try:
             self.cursor.execute("ALTER TABLE products ADD COLUMN supplier_id INTEGER")
+        except: pass
+        
+        # Migration: Add order_type to transactions
+        try:
+            self.cursor.execute("ALTER TABLE transactions ADD COLUMN order_type TEXT DEFAULT 'Normal'")
         except: pass
         
         # Product Prices table (Alternative Prices)
@@ -559,7 +565,9 @@ class Database:
     def get_transactions(self, limit=100):
         """Get recent transactions"""
         self.cursor.execute(
-            """SELECT t.*, u.username as cashier_name 
+            """SELECT t.id, t.transaction_number, t.cashier_id, t.total_amount, 
+                      t.tax_amount, t.discount_amount, t.payment_method, t.order_type,
+                      t.status, t.created_at, u.username as cashier_name 
                FROM transactions t 
                LEFT JOIN users u ON t.cashier_id = u.id 
                ORDER BY t.created_at DESC LIMIT ?""",
@@ -570,7 +578,9 @@ class Database:
     def get_transactions_by_cashier(self, cashier_id, limit=100):
         """Get transactions for a specific cashier"""
         self.cursor.execute(
-            """SELECT t.*, u.username as cashier_name 
+            """SELECT t.id, t.transaction_number, t.cashier_id, t.total_amount, 
+                      t.tax_amount, t.discount_amount, t.payment_method, t.order_type,
+                      t.status, t.created_at, u.username as cashier_name 
                FROM transactions t 
                LEFT JOIN users u ON t.cashier_id = u.id 
                WHERE t.cashier_id = ?
@@ -583,7 +593,7 @@ class Database:
         """Get single transaction by ID"""
         self.cursor.execute(
             """SELECT t.id, t.transaction_number, t.cashier_id, t.total_amount, 
-                      t.tax_amount, t.discount_amount, t.payment_method, 
+                      t.tax_amount, t.discount_amount, t.payment_method, t.order_type,
                       t.created_at, u.username, u.full_name
                FROM transactions t
                LEFT JOIN users u ON t.cashier_id = u.id
@@ -756,7 +766,7 @@ class Database:
     # Enhanced transaction with payment details
     def add_transaction_with_payment(self, transaction_number, cashier_id, items, 
                                     payment_method, payment_amount, change_amount,
-                                    tax_rate=0, discount_amount=0):
+                                    tax_rate=0, discount_amount=0, order_type="Normal"):
         """Add transaction with payment details"""
         # Calculate totals
         subtotal = sum(item['price'] * item['quantity'] for item in items)
@@ -767,9 +777,9 @@ class Database:
         self.cursor.execute("""
             INSERT INTO transactions 
             (transaction_number, cashier_id, total_amount, tax_amount, 
-             discount_amount, payment_method, status)
-            VALUES (?, ?, ?, ?, ?, ?, 'completed')
-        """, (transaction_number, cashier_id, total, tax_amount, discount_amount, payment_method))
+             discount_amount, payment_method, order_type, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'completed')
+        """, (transaction_number, cashier_id, total, tax_amount, discount_amount, payment_method, order_type))
         
         transaction_id = self.cursor.lastrowid
         

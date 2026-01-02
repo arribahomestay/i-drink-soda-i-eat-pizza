@@ -34,10 +34,12 @@ class SettingsPage:
         tabview.add("Receipt Config")
         tabview.add("Email Settings")
         tabview.add("Activity Logs")
+        tabview.add("Other Settings")
         
         self.setup_receipt_tab(tabview.tab("Receipt Config"))
         self.setup_email_tab(tabview.tab("Email Settings"))
         self.setup_activity_log_tab(tabview.tab("Activity Logs"))
+        self.setup_other_settings_tab(tabview.tab("Other Settings"))
     
     def setup_email_tab(self, parent_frame):
         """Setup Email Configuration tab"""
@@ -184,42 +186,126 @@ class SettingsPage:
         ctk.CTkButton(
             header,
             text="🔄 Refresh",
-            command=lambda: messagebox.showinfo("Info", "Refresh - to be implemented"),
+            command=lambda: self.refresh_logs(logs_list_frame),
             width=80,
             height=30,
             fg_color=COLORS["secondary"]
         ).pack(side="right")
         
+        # Table Header
+        table_header = ctk.CTkFrame(logs_frame, fg_color=COLORS["dark"], height=35)
+        table_header.pack(fill="x", padx=20, pady=(0, 5))
+        table_header.pack_propagate(False)
+        
+        ctk.CTkLabel(
+            table_header,
+            text="Action",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=COLORS["text_secondary"],
+            width=150,
+            anchor="w"
+        ).pack(side="left", padx=(15, 10))
+        
+        ctk.CTkLabel(
+            table_header,
+            text="User",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=COLORS["text_secondary"],
+            width=100,
+            anchor="w"
+        ).pack(side="left", padx=10)
+        
+        ctk.CTkLabel(
+            table_header,
+            text="Details",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=COLORS["text_secondary"],
+            anchor="w"
+        ).pack(side="left", fill="x", expand=True, padx=10)
+        
+        ctk.CTkLabel(
+            table_header,
+            text="Time",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=COLORS["text_secondary"],
+            width=130,
+            anchor="e"
+        ).pack(side="right", padx=(10, 15))
+        
         # Scrollable List
-        logs_list = ctk.CTkScrollableFrame(logs_frame, fg_color="transparent")
-        logs_list.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        logs_list_frame = ctk.CTkScrollableFrame(logs_frame, fg_color="transparent")
+        logs_list_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        
+        self.load_activity_logs(logs_list_frame)
+    
+    def load_activity_logs(self, logs_list_frame):
+        """Load and display activity logs in simple list format"""
+        # Clear existing
+        for widget in logs_list_frame.winfo_children():
+            widget.destroy()
         
         logs = self.database.get_activity_logs(limit=100)
         
         if logs:
-            for log in logs:
+            for idx, log in enumerate(logs):
                 # log: 0:id, 1:user_id, 2:username, 3:action, 4:details, 5:created_at
-                row = ctk.CTkFrame(logs_list, fg_color=COLORS["dark"], corner_radius=8)
-                row.pack(fill="x", pady=5)
                 
-                content = ctk.CTkFrame(row, fg_color="transparent")
-                content.pack(fill="x", padx=15, pady=10)
+                # Alternating row colors
+                row_color = COLORS["dark"] if idx % 2 == 0 else "transparent"
                 
-                # Left: Action & User
-                left = ctk.CTkFrame(content, fg_color="transparent")
-                left.pack(side="left", fill="x", expand=True)
+                row = ctk.CTkFrame(logs_list_frame, fg_color=row_color, height=30)
+                row.pack(fill="x", pady=1)
+                row.pack_propagate(False)
                 
-                ctk.CTkLabel(left, text=log[3], font=ctk.CTkFont(weight="bold"), text_color=COLORS["primary"]).pack(anchor="w")
-                ctk.CTkLabel(left, text=f"User: {log[2]}", font=ctk.CTkFont(size=11), text_color=COLORS["text_secondary"]).pack(anchor="w")
+                # Action
+                ctk.CTkLabel(
+                    row,
+                    text=log[3],
+                    font=ctk.CTkFont(size=11),
+                    text_color=COLORS["primary"],
+                    width=150,
+                    anchor="w"
+                ).pack(side="left", padx=(15, 10))
                 
-                # Right: Details & Time
-                right = ctk.CTkFrame(content, fg_color="transparent")
-                right.pack(side="right")
+                # User
+                ctk.CTkLabel(
+                    row,
+                    text=log[2],
+                    font=ctk.CTkFont(size=11),
+                    text_color=COLORS["text_secondary"],
+                    width=100,
+                    anchor="w"
+                ).pack(side="left", padx=10)
                 
-                ctk.CTkLabel(right, text=(log[5] or "")[:16], font=ctk.CTkFont(size=11, weight="bold"), text_color=COLORS["text_secondary"]).pack(anchor="e")
-                ctk.CTkLabel(right, text=log[4] or "", font=ctk.CTkFont(size=11), text_color=COLORS["text_secondary"], wraplength=400, justify="right").pack(anchor="e")
+                # Details
+                details_text = (log[4] or "")[:80] + "..." if log[4] and len(log[4]) > 80 else (log[4] or "")
+                ctk.CTkLabel(
+                    row,
+                    text=details_text,
+                    font=ctk.CTkFont(size=10),
+                    text_color=COLORS["text_secondary"],
+                    anchor="w"
+                ).pack(side="left", fill="x", expand=True, padx=10)
+                
+                # Time
+                ctk.CTkLabel(
+                    row,
+                    text=(log[5] or "")[:16],
+                    font=ctk.CTkFont(size=10),
+                    text_color=COLORS["text_secondary"],
+                    width=130,
+                    anchor="e"
+                ).pack(side="right", padx=(10, 15))
         else:
-            ctk.CTkLabel(logs_list, text="No logs found", text_color=COLORS["text_secondary"]).pack(pady=20)
+            ctk.CTkLabel(
+                logs_list_frame,
+                text="No logs found",
+                text_color=COLORS["text_secondary"]
+            ).pack(pady=20)
+    
+    def refresh_logs(self, logs_list_frame):
+        """Refresh the activity logs"""
+        self.load_activity_logs(logs_list_frame)
     
     def setup_receipt_tab(self, parent_frame):
         """Setup Receipt Configuration tab"""
@@ -361,3 +447,32 @@ class SettingsPage:
         
         # Initial call
         update_preview()
+    
+    def setup_other_settings_tab(self, parent_frame):
+        """Setup Other Settings tab - Placeholder for future settings"""
+        # Container
+        container = ctk.CTkFrame(parent_frame, fg_color=COLORS["card_bg"], corner_radius=15)
+        container.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # Header
+        header = ctk.CTkFrame(container, fg_color="transparent")
+        header.pack(fill="x", padx=30, pady=(30, 20))
+        
+        ctk.CTkLabel(
+            header,
+            text="⚙️ Other Settings",
+            font=ctk.CTkFont(size=20, weight="bold"),
+            text_color=COLORS["text_primary"]
+        ).pack(side="left")
+        
+        # Placeholder content
+        content_frame = ctk.CTkFrame(container, fg_color="transparent")
+        content_frame.pack(fill="both", expand=True, padx=30, pady=20)
+        
+        ctk.CTkLabel(
+            content_frame,
+            text="Additional settings will be added here",
+            font=ctk.CTkFont(size=14),
+            text_color=COLORS["text_secondary"]
+        ).pack(pady=50)
+

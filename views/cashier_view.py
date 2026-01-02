@@ -106,6 +106,10 @@ class CashierView(ctk.CTkFrame):
         # Create UI
         self.product_grid.create()
         self.shopping_cart.create(self.checkout, self.clear_cart)
+        
+        # Keyboard shortcuts - bind to the toplevel window
+        self.winfo_toplevel().bind("<F1>", lambda e: self.checkout())
+        self.winfo_toplevel().bind("<F2>", lambda e: self.clear_cart())
     
     def add_to_cart(self, product):
         """Add product to cart with customization and quantity dialog"""
@@ -220,6 +224,9 @@ class CashierView(ctk.CTkFrame):
         tax = 0
         total = subtotal
         
+        # Get order type from shopping cart
+        order_type = self.shopping_cart.get_order_type()
+        
         # Show payment dialog
         payment = PaymentDialog(
             self,
@@ -228,7 +235,8 @@ class CashierView(ctk.CTkFrame):
             cart_items,
             total,
             subtotal,
-            tax
+            tax,
+            order_type  # Pass order type
         )
         payment.show(self.on_checkout_success)
     
@@ -642,10 +650,11 @@ class CashierView(ctk.CTkFrame):
             header_frame = ctk.CTkFrame(list_header, fg_color="transparent")
             header_frame.pack(fill="both", expand=True, padx=15, pady=8)
             
-            ctk.CTkLabel(header_frame, text="Transaction #", font=ctk.CTkFont(size=10, weight="bold"), text_color=COLORS["text_secondary"], width=130, anchor="w").pack(side="left", padx=(0, 10))
-            ctk.CTkLabel(header_frame, text="Date & Time", font=ctk.CTkFont(size=10, weight="bold"), text_color=COLORS["text_secondary"], width=130, anchor="w").pack(side="left", padx=(0, 10))
-            ctk.CTkLabel(header_frame, text="Total", font=ctk.CTkFont(size=10, weight="bold"), text_color=COLORS["text_secondary"], width=80, anchor="w").pack(side="left", padx=(0, 10))
-            ctk.CTkLabel(header_frame, text="Payment", font=ctk.CTkFont(size=10, weight="bold"), text_color=COLORS["text_secondary"], width=70, anchor="w").pack(side="left")
+            ctk.CTkLabel(header_frame, text="Transaction #", font=ctk.CTkFont(size=10, weight="bold"), text_color=COLORS["text_secondary"], width=120, anchor="w").pack(side="left", padx=(0, 10))
+            ctk.CTkLabel(header_frame, text="Date & Time", font=ctk.CTkFont(size=10, weight="bold"), text_color=COLORS["text_secondary"], width=110, anchor="w").pack(side="left", padx=(0, 10))
+            ctk.CTkLabel(header_frame, text="Total", font=ctk.CTkFont(size=10, weight="bold"), text_color=COLORS["text_secondary"], width=70, anchor="w").pack(side="left", padx=(0, 10))
+            ctk.CTkLabel(header_frame, text="Payment", font=ctk.CTkFont(size=10, weight="bold"), text_color=COLORS["text_secondary"], width=60, anchor="w").pack(side="left", padx=(0, 10))
+            ctk.CTkLabel(header_frame, text="Type", font=ctk.CTkFont(size=10, weight="bold"), text_color=COLORS["text_secondary"], width=70, anchor="w").pack(side="left")
             
             # Scrollable list
             list_frame = ctk.CTkScrollableFrame(content_container, fg_color="transparent", scrollbar_button_color=COLORS["primary"])
@@ -661,17 +670,38 @@ class CashierView(ctk.CTkFrame):
                     content.pack(fill="both", expand=True, padx=15, pady=6)
                     
                     txn_number = txn[1] if len(txn) > 1 else "N/A"
-                    ctk.CTkLabel(content, text=txn_number, font=ctk.CTkFont(size=10), text_color=COLORS["text_primary"], width=130, anchor="w").pack(side="left", padx=(0, 10))
+                    ctk.CTkLabel(content, text=txn_number, font=ctk.CTkFont(size=10), text_color=COLORS["text_primary"], width=120, anchor="w").pack(side="left", padx=(0, 10))
                     
-                    created_at = txn[8] if len(txn) > 8 else "N/A"
-                    ctk.CTkLabel(content, text=created_at, font=ctk.CTkFont(size=10), text_color=COLORS["text_secondary"], width=130, anchor="w").pack(side="left", padx=(0, 10))
+                    # created_at is index 9 now with new query, but was 8. 
+                    # Let's check query again.
+                    # SELECT id, txn_num, cashier_id, total, tax, discount, payment, order_type, status, created_at
+                    # 0, 1, 2, 3, 4, 5, 6, 7, 8, 9
+                    
+                    created_at = txn[9] if len(txn) > 9 else "N/A"
+                    ctk.CTkLabel(content, text=created_at, font=ctk.CTkFont(size=10), text_color=COLORS["text_secondary"], width=110, anchor="w").pack(side="left", padx=(0, 10))
                     
                     total = txn[3] if len(txn) > 3 else 0
-                    ctk.CTkLabel(content, text=f"{CURRENCY_SYMBOL}{total:.2f}", font=ctk.CTkFont(size=10, weight="bold"), text_color=COLORS["success"], width=80, anchor="w").pack(side="left", padx=(0, 10))
+                    ctk.CTkLabel(content, text=f"{CURRENCY_SYMBOL}{total:.2f}", font=ctk.CTkFont(size=10, weight="bold"), text_color=COLORS["success"], width=70, anchor="w").pack(side="left", padx=(0, 10))
                     
                     payment = txn[6] if len(txn) > 6 else "N/A"
                     payment_icon = "💵" if payment == "Cash" else "📱"
-                    ctk.CTkLabel(content, text=f"{payment_icon} {payment}", font=ctk.CTkFont(size=10), text_color=COLORS["text_secondary"], width=70, anchor="w").pack(side="left")
+                    ctk.CTkLabel(content, text=f"{payment_icon} {payment}", font=ctk.CTkFont(size=10), text_color=COLORS["text_secondary"], width=60, anchor="w").pack(side="left", padx=(0, 10))
+                    
+                    # Order Type - index 7
+                    order_type = txn[7] if len(txn) > 7 else "Normal"
+                    if order_type is None: order_type = "Normal"
+                    
+                    if order_type == "Dine In":
+                        type_color = COLORS["info"]
+                        type_icon = "🍽️"
+                    elif order_type == "Take Out":
+                        type_color = COLORS["warning"]
+                        type_icon = "🥡"
+                    else:
+                        type_color = COLORS["text_secondary"]
+                        type_icon = "🛒"
+                    
+                    ctk.CTkLabel(content, text=f"{type_icon} {order_type}", font=ctk.CTkFont(size=9), text_color=type_color, width=70, anchor="w").pack(side="left")
             else:
                 ctk.CTkLabel(list_frame, text="No transactions found", font=ctk.CTkFont(size=14), text_color=COLORS["text_secondary"]).pack(pady=50)
         
@@ -718,11 +748,25 @@ class CashierView(ctk.CTkFrame):
                             product_sales[product_name]['variants'][variant_name] = 0
                         product_sales[product_name]['variants'][variant_name] += qty
                     
+                    # Parse modifiers JSON
                     if modifiers_str:
-                        for mod in modifiers_str.split(", "):
-                            if mod not in product_sales[product_name]['modifiers']:
-                                product_sales[product_name]['modifiers'][mod] = 0
-                            product_sales[product_name]['modifiers'][mod] += qty
+                        try:
+                            import json
+                            mods_list = json.loads(modifiers_str)
+                            for mod in mods_list:
+                                if isinstance(mod, dict):
+                                    mod_name = mod.get('name', 'Unknown')
+                                    mod_qty = mod.get('quantity', 1)
+                                    
+                                    if mod_name not in product_sales[product_name]['modifiers']:
+                                        product_sales[product_name]['modifiers'][mod_name] = 0
+                                    product_sales[product_name]['modifiers'][mod_name] += (qty * mod_qty)
+                        except:
+                            # Fallback for old format
+                            for mod in modifiers_str.split(", "):
+                                if mod not in product_sales[product_name]['modifiers']:
+                                    product_sales[product_name]['modifiers'][mod] = 0
+                                product_sales[product_name]['modifiers'][mod] += qty
             
             def show_ingredient_details(product_name, product_id, qty_sold):
                 """Show modal with ingredient deduction details"""

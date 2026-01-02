@@ -16,10 +16,10 @@ class DetailedReportGenerator:
         
         # Fetch Transactions
         if report_type == 'all':
-             query = "SELECT id, created_at FROM transactions"
+             query = "SELECT id, created_at, order_type, total_amount FROM transactions"
              params = ()
         else:
-             query = "SELECT id, created_at FROM transactions WHERE DATE(created_at) BETWEEN ? AND ?"
+             query = "SELECT id, created_at, order_type, total_amount FROM transactions WHERE DATE(created_at) BETWEEN ? AND ?"
              params = (start_date, end_date)
              
         self.db.cursor.execute(query, params)
@@ -29,6 +29,8 @@ class DetailedReportGenerator:
         products_sold = {} # Name -> Qty
         addons_sold = {}   # Name -> Qty
         ingredients_used = {} # Name -> Qty
+        order_types = {} # Type -> Count
+        total_revenue = 0.0
         
         # Pre-fetch maps
         # Product -> Ingredients
@@ -56,13 +58,30 @@ class DetailedReportGenerator:
             
         # Process
         for txn in transactions:
+            # Aggregate Order Type
+            o_type = txn[2] if len(txn) > 2 else "Normal"
+            if not o_type: o_type = "Normal"
+            if not o_type: o_type = "Normal"
+            order_types[o_type] = order_types.get(o_type, 0) + 1
+            
+            # Aggregate Revenue
+            t_amt = txn[3] if len(txn) > 3 and txn[3] is not None else 0.0
+            total_revenue += float(t_amt)
+            
             items = self.db.get_transaction_items(txn[0])
             for item in items:
-                # item: id, txn_id, prod_id, variant, name, price, qty, subtotal, modifiers
-                pid = item[2]
-                p_name = item[4]
-                qty = item[6]
-                mods_str = item[8]
+                # transaction_items columns: id, transaction_id, product_id, product_name, quantity, unit_price, subtotal, variant_id, variant_name, modifiers
+                # Correct indices:
+                item_id = item[0]
+                txn_id = item[1]
+                pid = item[2]           # product_id
+                p_name = item[3]        # product_name (was incorrectly item[4])
+                qty = item[4]           # quantity (was incorrectly item[6])
+                unit_price = item[5]
+                subtotal = item[6]
+                variant_id = item[7] if len(item) > 7 else None
+                variant_name = item[8] if len(item) > 8 else None
+                mods_str = item[9] if len(item) > 9 else None  # modifiers (was incorrectly item[8])
                 
                 # 1. Product Count
                 products_sold[p_name] = products_sold.get(p_name, 0) + qty
@@ -98,7 +117,7 @@ class DetailedReportGenerator:
                                 ingredients_used[link_name] = ingredients_used.get(link_name, 0) + total_link
                                 
                     except (json.JSONDecodeError, TypeError):
-                        # Legacy String
+                        # Legacy String Format (comma-separated)
                         for m_str in mods_str.split(", "):
                              m_clean = m_str.strip()
                              if m_clean:
@@ -112,7 +131,7 @@ class DetailedReportGenerator:
         
         if output_format == 'pdf':
             return self._export_pdf(filename, 
-                {'products': products_sold, 'addons': addons_sold, 'ingredients': ingredients_used},
+                {'products': products_sold, 'addons': addons_sold, 'ingredients': ingredients_used, 'types': order_types, 'total_revenue': total_revenue},
                 start_date, end_date)
         
         path = f"{filename}.html"
@@ -135,6 +154,14 @@ class DetailedReportGenerator:
             <h1>📊 Comprehensive Sales Summary</h1>
             <p><strong>Date Range:</strong> {start_date} to {end_date}</p>
             <p><strong>Generated On:</strong> {datetime.now().strftime('%B %d, %Y %I:%M %p')}</p>
+            
+            <div class="section">
+                <h2>📋 Order Types</h2>
+                <table>
+                    <tr><th>Type</th><th>Count</th></tr>
+                    {''.join([f"<tr><td>{k}</td><td>{v}</td></tr>" for k,v in sorted(order_types.items())])}
+                </table>
+            </div>
             
             <div class="section">
                 <h2>🍔 Sold Items (Products)</h2>
@@ -170,7 +197,7 @@ class DetailedReportGenerator:
         return path
 
     def _export_pdf(self, filename, data, start, end):
-        """Generate PDF report using FPDF"""
+        """Generate PDF report using FPDF with clean, organized tables"""
         try:
             from fpdf import FPDF
         except ImportError:
@@ -178,50 +205,118 @@ class DetailedReportGenerator:
             
         class PDF(FPDF):
             def header(self):
-                self.set_font('Helvetica', 'B', 16)
-                self.cell(0, 10, 'Comprehensive Sales Summary', align='C', new_x="LMARGIN", new_y="NEXT")
-                self.set_font('Helvetica', '', 10)
-                self.cell(0, 10, f'Generated: {datetime.now().strftime("%Y-%m-%d %H:%M")}', align='C', new_x="LMARGIN", new_y="NEXT")
-                self.ln(5)
+                # Title
+                self.set_font('Helvetica', 'B', 20)
+                self.set_text_color(44, 62, 80)  # Dark blue-gray
+                self.cell(0, 12, 'Sales Summary Report', align='C', new_x="LMARGIN", new_y="NEXT")
+                
+                # Subtitle
+                self.set_font('Helvetica', '', 11)
+                self.set_text_color(100, 100, 100)
+                self.cell(0, 8, f'Generated: {datetime.now().strftime("%B %d, %Y at %I:%M %p")}', align='C', new_x="LMARGIN", new_y="NEXT")
+                
+                # Line separator
+                self.set_draw_color(52, 152, 219)  # Blue
+                self.set_line_width(0.5)
+                self.line(10, self.get_y() + 2, 200, self.get_y() + 2)
+                self.ln(8)
 
             def footer(self):
                 self.set_y(-15)
-                self.set_font('Helvetica', 'I', 8)
+                self.set_font('Helvetica', 'I', 9)
+                self.set_text_color(150, 150, 150)
                 self.cell(0, 10, f'Page {self.page_no()}/{{nb}}', align='C')
 
         pdf = PDF()
         pdf.add_page()
+        pdf.alias_nb_pages()
         
-        # Period Info
+        # Period Info Box
         pdf.set_font("Helvetica", 'B', 12)
-        pdf.cell(0, 10, f"Period: {start} to {end}", new_x="LMARGIN", new_y="NEXT")
-        pdf.ln(5)
+        pdf.set_fill_color(236, 240, 241)  # Light gray
+        pdf.set_text_color(44, 62, 80)
+        
+        # Period + Total Revenue
+        # Period + Total Revenue
+        total_rev = data.get('total_revenue', 0.0)
+        from config import CURRENCY_SYMBOL
+        
+        # Handle FPDF currency symbol limitation (Standard fonts don't support unicode symbols like Peso)
+        symbol = CURRENCY_SYMBOL
+        if symbol == "₱": 
+            symbol = "P"
+            
+        info_text = f"  Report Period: {start} to {end}    |    Total Revenue: {symbol}{total_rev:,.2f}"
+        
+        pdf.cell(0, 10, info_text, fill=True, new_x="LMARGIN", new_y="NEXT", border=0)
+        pdf.ln(8)
 
-        # Helper to draw table
-        def draw_section(title, items):
-            if not items: return
+        # Helper to draw professional table
+        def draw_section(title, items, emoji=""):
+            if not items: 
+                return
 
+            # Section Title
             pdf.set_font("Helvetica", 'B', 14)
-            pdf.set_fill_color(240, 240, 240)
-            pdf.cell(0, 10, title, fill=True, new_x="LMARGIN", new_y="NEXT")
+            pdf.set_text_color(52, 73, 94)  # Dark blue
+            # Emojis not supported in standard fonts, remove them
+            pdf.cell(0, 10, f"{title}", new_x="LMARGIN", new_y="NEXT")
             pdf.ln(2)
             
             # Table Header
-            pdf.set_font("Helvetica", 'B', 10)
-            pdf.set_fill_color(220, 220, 220)
-            pdf.cell(140, 8, "Item Name", border=1, fill=True)
-            pdf.cell(40, 8, "Quantity", border=1, fill=True, new_x="LMARGIN", new_y="NEXT")
+            pdf.set_font("Helvetica", 'B', 11)
+            pdf.set_fill_color(52, 152, 219)  # Blue header
+            pdf.set_text_color(255, 255, 255)  # White text
+            pdf.set_draw_color(52, 152, 219)  # Blue border
             
+            pdf.cell(140, 10, "Item Name", border=1, fill=True, align='L')
+            pdf.cell(40, 10, "Quantity", border=1, fill=True, align='C', new_x="LMARGIN", new_y="NEXT")
+            
+            # Table Rows
             pdf.set_font("Helvetica", '', 10)
+            pdf.set_text_color(44, 62, 80)  # Dark text
+            pdf.set_draw_color(189, 195, 199)  # Light gray borders
+            
+            # Alternate row colors for better readability
+            row_num = 0
             for name, qty in sorted(items.items()):
+                # Alternate background colors
+                if row_num % 2 == 0:
+                    pdf.set_fill_color(255, 255, 255)  # White
+                else:
+                    pdf.set_fill_color(249, 249, 249)  # Very light gray
+                
+                # Clean the name to handle special characters
                 clean_name = str(name).encode('latin-1', 'replace').decode('latin-1')
-                pdf.cell(140, 8, clean_name, border=1)
-                pdf.cell(40, 8, str(qty), border=1, new_x="LMARGIN", new_y="NEXT")
-            pdf.ln(8)
+                
+                # Truncate long names if needed
+                if len(clean_name) > 60:
+                    clean_name = clean_name[:57] + "..."
+                
+                pdf.cell(140, 8, f"  {clean_name}", border=1, fill=True, align='L')
+                pdf.cell(40, 8, f"{qty:g}", border=1, fill=True, align='C', new_x="LMARGIN", new_y="NEXT")
+                row_num += 1
+            
+            # Summary row
+            total_qty = sum(items.values())
+            pdf.set_font("Helvetica", 'B', 10)
+            pdf.set_fill_color(236, 240, 241)  # Light gray
+            pdf.cell(140, 8, "  TOTAL", border=1, fill=True, align='L')
+            pdf.cell(40, 8, f"{total_qty:g}", border=1, fill=True, align='C', new_x="LMARGIN", new_y="NEXT")
+            
+            pdf.ln(10)  # Space between sections
 
-        draw_section("Sold Items (Products)", data.get('products', {}))
-        draw_section("Sold Add-ons (Modifiers)", data.get('addons', {}))
-        draw_section("Sold Ingredients", data.get('ingredients', {}))
+        # Draw all sections with emojis
+        draw_section("Order Types", data.get('types', {}), "")
+        draw_section("Sold Items (Products)", data.get('products', {}), "")
+        draw_section("Sold Add-ons (Modifiers)", data.get('addons', {}), "")
+        draw_section("Ingredients Used", data.get('ingredients', {}), "")
+        
+        # Footer note
+        pdf.ln(5)
+        pdf.set_font("Helvetica", 'I', 9)
+        pdf.set_text_color(150, 150, 150)
+        pdf.multi_cell(0, 5, "This report shows the total quantity of products sold, add-ons/modifiers used, and ingredients consumed during the selected period.", align='C')
         
         path = f"{filename}.pdf"
         pdf.output(path)
@@ -283,12 +378,15 @@ class DetailedReportGenerator:
             txn_id = txn[0]
             items = self.db.get_transaction_items(txn_id)
             for item in items:
-                # item: id, txn_id, prod_id, variant_id, name, price, qty, subtotal, modifiers
-                pid = item[2]
-                name = item[4]
-                qty = item[6]
-                subtotal = item[7]
-                mods_str = item[8]
+                # transaction_items columns: id, transaction_id, product_id, product_name, quantity, unit_price, subtotal, variant_id, variant_name, modifiers
+                pid = item[2]           # product_id
+                name = item[3]          # product_name (was incorrectly item[4])
+                qty = item[4]           # quantity (was incorrectly item[6])
+                unit_price = item[5]
+                subtotal = item[6]      # (was incorrectly item[7])
+                variant_id = item[7] if len(item) > 7 else None
+                variant_name = item[8] if len(item) > 8 else None
+                mods_str = item[9] if len(item) > 9 else None  # modifiers (was incorrectly item[8])
                 
                 if pid not in product_stats:
                     product_stats[pid] = {

@@ -14,7 +14,7 @@ try:
     renderer = ReceiptRenderer(settings)
     # Mock transaction with enough fields
     # id, txn_num, user_id, total, tax, discount, method, tendered, date, cashier_name
-    mock_txn = [0, "TEST-001", 1, 100, 0, 0, "Cash", 100, "2025-01-01 12:00:00", "Admin"]
+    mock_txn = [0, "TEST-001", 1, 100, 0, 0, "Cash", 100, "2025-01-01 12:00:00", "Admin", "Normal"]
     path = renderer.save_receipt(mock_txn, [], folder=".")
     print(f"Success! Saved to {path}")
     

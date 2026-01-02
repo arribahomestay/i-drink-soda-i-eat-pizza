@@ -164,12 +164,241 @@ class UsersPage:
             ).pack()
     
     def add_user_dialog(self):
-        """Show add user dialog - Placeholder"""
-        messagebox.showinfo("Info", "Add user dialog - to be implemented")
+        """Show add user dialog"""
+        dialog = ctk.CTkToplevel(self.parent)
+        dialog.title("Add New Cashier")
+        dialog.geometry("450x400")
+        dialog.configure(fg_color=COLORS["dark"])
+        dialog.transient(self.parent)
+        dialog.grab_set()
+        
+        # Center
+        x = (dialog.winfo_screenwidth() - 450) // 2
+        y = (dialog.winfo_screenheight() - 400) // 2
+        dialog.geometry(f"+{x}+{y}")
+        
+        # Header
+        ctk.CTkLabel(
+            dialog,
+            text="➕ Add New Cashier",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=COLORS["text_primary"]
+        ).pack(pady=(20, 10))
+        
+        # Form
+        form_frame = ctk.CTkFrame(dialog, fg_color=COLORS["card_bg"], corner_radius=15)
+        form_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        
+        # Username
+        ctk.CTkLabel(
+            form_frame,
+            text="Username *",
+            font=ctk.CTkFont(size=12, weight="bold")
+        ).pack(anchor="w", padx=20, pady=(20, 5))
+        
+        username_entry = ctk.CTkEntry(form_frame, height=35, font=ctk.CTkFont(size=13))
+        username_entry.pack(fill="x", padx=20, pady=(0, 10))
+        username_entry.focus()
+        
+        # Password
+        ctk.CTkLabel(
+            form_frame,
+            text="Password *",
+            font=ctk.CTkFont(size=12, weight="bold")
+        ).pack(anchor="w", padx=20, pady=(5, 5))
+        
+        password_entry = ctk.CTkEntry(form_frame, height=35, show="*", font=ctk.CTkFont(size=13))
+        password_entry.pack(fill="x", padx=20, pady=(0, 10))
+        
+        # Full Name
+        ctk.CTkLabel(
+            form_frame,
+            text="Full Name (Optional)",
+            font=ctk.CTkFont(size=12, weight="bold")
+        ).pack(anchor="w", padx=20, pady=(5, 5))
+        
+        fullname_entry = ctk.CTkEntry(form_frame, height=35, font=ctk.CTkFont(size=13))
+        fullname_entry.pack(fill="x", padx=20, pady=(0, 20))
+        
+        # Buttons
+        btn_frame = ctk.CTkFrame(form_frame, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=20, pady=(0, 20))
+        
+        def save():
+            username = username_entry.get().strip()
+            password = password_entry.get().strip()
+            fullname = fullname_entry.get().strip()
+            
+            # Validation
+            if not username:
+                messagebox.showerror("Error", "Username is required")
+                return
+            
+            if not password:
+                messagebox.showerror("Error", "Password is required")
+                return
+            
+            if len(password) < 4:
+                messagebox.showerror("Error", "Password must be at least 4 characters")
+                return
+            
+            # Check if username already exists
+            existing_users = self.database.get_all_users()
+            if any(u[1].lower() == username.lower() for u in existing_users):
+                messagebox.showerror("Error", "Username already exists")
+                return
+            
+            try:
+                # Add user with role 'cashier'
+                self.database.add_user(username, password, "cashier", fullname or None)
+                messagebox.showinfo("Success", f"Cashier '{username}' added successfully!")
+                dialog.destroy()
+                self.switch_page("users")  # Refresh the page
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to add user: {str(e)}")
+        
+        ctk.CTkButton(
+            btn_frame,
+            text="Cancel",
+            command=dialog.destroy,
+            height=35,
+            width=120,
+            fg_color=COLORS["danger"],
+            hover_color="#c0392b",
+            font=ctk.CTkFont(size=12)
+        ).pack(side="left")
+        
+        ctk.CTkButton(
+            btn_frame,
+            text="Add Cashier",
+            command=save,
+            height=35,
+            fg_color=COLORS["success"],
+            hover_color="#27ae60",
+            font=ctk.CTkFont(size=12, weight="bold")
+        ).pack(side="right", fill="x", expand=True, padx=(10, 0))
+        
+        # Bind Enter key
+        password_entry.bind("<Return>", lambda e: save())
+        fullname_entry.bind("<Return>", lambda e: save())
     
     def edit_user_dialog(self, user):
-        """Show edit user dialog - Placeholder"""
-        messagebox.showinfo("Info", f"Edit user dialog for {user[1]} - to be implemented")
+        """Show edit user dialog"""
+        dialog = ctk.CTkToplevel(self.parent)
+        dialog.title("Edit Cashier")
+        dialog.geometry("450x450")
+        dialog.configure(fg_color=COLORS["dark"])
+        dialog.transient(self.parent)
+        dialog.grab_set()
+        
+        # Center
+        x = (dialog.winfo_screenwidth() - 450) // 2
+        y = (dialog.winfo_screenheight() - 450) // 2
+        dialog.geometry(f"+{x}+{y}")
+        
+        # Header
+        ctk.CTkLabel(
+            dialog,
+            text=f"✏️ Edit Cashier: {user[1]}",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=COLORS["text_primary"]
+        ).pack(pady=(20, 10))
+        
+        # Form
+        form_frame = ctk.CTkFrame(dialog, fg_color=COLORS["card_bg"], corner_radius=15)
+        form_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        
+        # Username (read-only)
+        ctk.CTkLabel(
+            form_frame,
+            text="Username",
+            font=ctk.CTkFont(size=12, weight="bold")
+        ).pack(anchor="w", padx=20, pady=(20, 5))
+        
+        username_label = ctk.CTkLabel(
+            form_frame,
+            text=user[1],
+            font=ctk.CTkFont(size=13),
+            text_color=COLORS["text_secondary"],
+            height=35,
+            anchor="w"
+        )
+        username_label.pack(fill="x", padx=20, pady=(0, 10))
+        
+        # New Password (optional)
+        ctk.CTkLabel(
+            form_frame,
+            text="New Password (leave empty to keep current)",
+            font=ctk.CTkFont(size=12, weight="bold")
+        ).pack(anchor="w", padx=20, pady=(5, 5))
+        
+        password_entry = ctk.CTkEntry(form_frame, height=35, show="*", font=ctk.CTkFont(size=13))
+        password_entry.pack(fill="x", padx=20, pady=(0, 10))
+        
+        # Full Name
+        ctk.CTkLabel(
+            form_frame,
+            text="Full Name",
+            font=ctk.CTkFont(size=12, weight="bold")
+        ).pack(anchor="w", padx=20, pady=(5, 5))
+        
+        fullname_entry = ctk.CTkEntry(form_frame, height=35, font=ctk.CTkFont(size=13))
+        fullname_entry.pack(fill="x", padx=20, pady=(0, 20))
+        fullname_entry.insert(0, user[3] or "")
+        fullname_entry.focus()
+        
+        # Buttons
+        btn_frame = ctk.CTkFrame(form_frame, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=20, pady=(0, 20))
+        
+        def save():
+            new_password = password_entry.get().strip()
+            fullname = fullname_entry.get().strip()
+            
+            # Validation
+            if new_password and len(new_password) < 4:
+                messagebox.showerror("Error", "Password must be at least 4 characters")
+                return
+            
+            try:
+                # Update user
+                if new_password:
+                    # Update with new password
+                    self.database.update_user_password(user[0], new_password)
+                
+                # Update full name
+                self.database.update_user_fullname(user[0], fullname or None)
+                
+                messagebox.showinfo("Success", f"Cashier '{user[1]}' updated successfully!")
+                dialog.destroy()
+                self.switch_page("users")  # Refresh the page
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to update user: {str(e)}")
+        
+        ctk.CTkButton(
+            btn_frame,
+            text="Cancel",
+            command=dialog.destroy,
+            height=35,
+            width=120,
+            fg_color=COLORS["danger"],
+            hover_color="#c0392b",
+            font=ctk.CTkFont(size=12)
+        ).pack(side="left")
+        
+        ctk.CTkButton(
+            btn_frame,
+            text="Update",
+            command=save,
+            height=35,
+            fg_color=COLORS["success"],
+            hover_color="#27ae60",
+            font=ctk.CTkFont(size=12, weight="bold")
+        ).pack(side="right", fill="x", expand=True, padx=(10, 0))
+        
+        # Bind Enter key
+        password_entry.bind("<Return>", lambda e: save())
+        fullname_entry.bind("<Return>", lambda e: save())
     
     def delete_user(self, user):
         """Delete a user"""
