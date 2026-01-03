@@ -17,8 +17,9 @@ class ShoppingCart:
         self.tax_label = None
         self.total_label = None
     
-    def create(self, checkout_callback, clear_callback):
+    def create(self, checkout_callback, clear_callback, edit_callback=None):
         """Create the shopping cart UI"""
+        self.edit_callback = edit_callback
         # Right side - Cart
         right_panel = ctk.CTkFrame(self.parent, fg_color=COLORS["card_bg"], corner_radius=15, width=450)
         right_panel.pack(side="right", fill="both", padx=(10, 0))
@@ -219,85 +220,69 @@ class ShoppingCart:
         self.update_summary()
     
     def create_cart_item(self, item):
-        """Create cart item widget"""
-        item_frame = ctk.CTkFrame(self.cart_frame, fg_color=COLORS["card_bg"], corner_radius=8)
-        item_frame.pack(fill="x", padx=5, pady=5)
+        """Create compact cart item widget"""
+        item_frame = ctk.CTkFrame(self.cart_frame, fg_color=COLORS["card_bg"], corner_radius=6)
+        item_frame.pack(fill="x", padx=5, pady=3)
         
-        # Item info
-        info_frame = ctk.CTkFrame(item_frame, fg_color="transparent")
-        info_frame.pack(fill="x", padx=10, pady=10)
+        # Layout: Horizontal Container
+        content_frame = ctk.CTkFrame(item_frame, fg_color="transparent")
+        content_frame.pack(fill="x", padx=8, pady=8)
         
+        # LEFT: Info
+        left_col = ctk.CTkFrame(content_frame, fg_color="transparent")
+        left_col.pack(side="left", fill="both", expand=True)
+
         name_label = ctk.CTkLabel(
-            info_frame,
+            left_col,
             text=item['name'],
             font=ctk.CTkFont(size=12, weight="bold"),
             text_color=COLORS["text_primary"],
-            anchor="w"
+            anchor="w",
+            justify="left"
         )
         name_label.pack(anchor="w")
         
-        details_frame = ctk.CTkFrame(info_frame, fg_color="transparent")
-        details_frame.pack(fill="x", pady=(5, 0))
-        
+        price_txt = f"{item['quantity']} x {CURRENCY_SYMBOL}{item['price']:.2f}"
         price_label = ctk.CTkLabel(
-            details_frame,
-            text=f"{CURRENCY_SYMBOL}{item['price']:.2f} x {item['quantity']}",
+            left_col,
+            text=price_txt,
             font=ctk.CTkFont(size=11),
-            text_color=COLORS["text_secondary"]
+            text_color=COLORS["text_secondary"],
+            anchor="w"
         )
-        price_label.pack(side="left")
+        price_label.pack(anchor="w")
+        
+        # RIGHT: Totals & Actions
+        right_col = ctk.CTkFrame(content_frame, fg_color="transparent")
+        right_col.pack(side="right", anchor="ne")
         
         subtotal_label = ctk.CTkLabel(
-            details_frame,
+            right_col,
             text=f"{CURRENCY_SYMBOL}{item['subtotal']:.2f}",
             font=ctk.CTkFont(size=12, weight="bold"),
-            text_color=COLORS["success"]
+            text_color=COLORS["success"],
+            anchor="e"
         )
-        subtotal_label.pack(side="right")
+        subtotal_label.pack(anchor="e", pady=(0, 2))
         
-        # Quantity controls
-        controls_frame = ctk.CTkFrame(item_frame, fg_color="transparent")
-        controls_frame.pack(fill="x", padx=10, pady=(0, 10))
+        # Action Buttons (Compact Row)
+        btns_row = ctk.CTkFrame(right_col, fg_color="transparent")
+        btns_row.pack(anchor="e")
         
-        remove_btn = ctk.CTkButton(
-            controls_frame,
-            text="Remove",
-            command=lambda i=item: self.remove_item(i),
-            width=60,
-            height=25,
-            font=ctk.CTkFont(size=10),
-            fg_color=COLORS["danger"],
-            hover_color="#c0392b",
-            corner_radius=5
-        )
-        remove_btn.pack(side="left")
+        if self.edit_callback:
+            ctk.CTkButton(
+                btns_row, text="✎", width=24, height=24,
+                font=ctk.CTkFont(size=14), fg_color=COLORS["warning"], hover_color="#f39c12",
+                command=lambda i=item: self.edit_callback(i)
+            ).pack(side="left", padx=2)
+            
+        ctk.CTkButton(
+            btns_row, text="×", width=24, height=24,
+            font=ctk.CTkFont(size=16, weight="bold"), fg_color=COLORS["danger"], hover_color="#c0392b",
+            command=lambda i=item: self.remove_item(i)
+        ).pack(side="left", padx=0)
         
-        qty_frame = ctk.CTkFrame(controls_frame, fg_color="transparent")
-        qty_frame.pack(side="right")
-        
-        minus_btn = ctk.CTkButton(
-            qty_frame,
-            text="-",
-            command=lambda i=item: self.decrease_quantity(i),
-            width=30,
-            height=25,
-            font=ctk.CTkFont(size=14, weight="bold"),
-            fg_color=COLORS["primary"],
-            corner_radius=5
-        )
-        minus_btn.pack(side="left", padx=2)
-        
-        plus_btn = ctk.CTkButton(
-            qty_frame,
-            text="+",
-            command=lambda i=item: self.increase_quantity(i),
-            width=30,
-            height=25,
-            font=ctk.CTkFont(size=14, weight="bold"),
-            fg_color=COLORS["primary"],
-            corner_radius=5
-        )
-        plus_btn.pack(side="left", padx=2)
+
     
     def increase_quantity(self, item):
         """Increase item quantity"""
@@ -316,6 +301,13 @@ class ShoppingCart:
             item['subtotal'] = item['quantity'] * item['price']
             self.update_cart_display()
     
+    def replace_item(self, old_item, new_item):
+        """Replace an existing item with a modified one"""
+        if old_item in self.cart_items:
+            idx = self.cart_items.index(old_item)
+            self.cart_items[idx] = new_item
+            self.update_cart_display()
+
     def update_summary(self):
         """Update price summary"""
         subtotal = sum(item['subtotal'] for item in self.cart_items)

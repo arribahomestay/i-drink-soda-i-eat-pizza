@@ -6,13 +6,14 @@ import customtkinter as ctk
 from config import COLORS, CURRENCY_SYMBOL
 
 class VariantSelector:
-    def __init__(self, parent, product, variants, modifiers, add_callback, prices=None):
+    def __init__(self, parent, product, variants, modifiers, add_callback, prices=None, initial_state=None):
         self.parent = parent
         self.product = product
         self.variants = variants
         self.modifiers = modifiers
         self.add_callback = add_callback
         self.prices = prices or []
+        self.initial_state = initial_state
         
         # State
         self.selected_price_idx = None
@@ -112,6 +113,8 @@ class VariantSelector:
             )
             seg_btn.pack(fill="x", pady=(0, 15))
             seg_btn.set(std_name)
+            self.seg_btn = seg_btn
+            self.price_values = values
 
         # 2. Quantity
         ctk.CTkLabel(self.left_frame, text="Quantity", font=ctk.CTkFont(size=12, weight="bold"), text_color=COLORS["text_secondary"]).pack(anchor="w", pady=(0, 5))
@@ -171,7 +174,9 @@ class VariantSelector:
                 display_text = f"{name} {linked_status}"
                 
                 ctk.CTkCheckBox(row, text=display_text, variable=check_var, command=self.update_total, font=ctk.CTkFont(size=12), width=20, height=20, checkbox_width=18, checkbox_height=18).pack(side="left")
-                ctk.CTkLabel(row, text=f"+{CURRENCY_SYMBOL}{price:.0f}", font=ctk.CTkFont(size=11), text_color=COLORS["text_secondary"]).pack(side="left", padx=5)
+                price_lbl = ctk.CTkLabel(row, text=f"+{CURRENCY_SYMBOL}{price:.0f}", font=ctk.CTkFont(size=11), text_color=COLORS["text_secondary"])
+                price_lbl.pack(side="left", padx=5)
+                self.mod_vars[res_id]['label'] = price_lbl
                 
                 # Tiny Qty Controls
                 q_frame = ctk.CTkFrame(row, fg_color="transparent")
@@ -179,7 +184,7 @@ class VariantSelector:
                 
                 def mq(v, qv=qty_var, cv=check_var):
                     qv.set(max(1, qv.get() + v))
-                    if cv.get(): self.update_total()
+                    self.update_total()
                     
                 ctk.CTkButton(q_frame, text="-", width=20, height=20, fg_color=COLORS["dark"], command=lambda qv=qty_var, cv=check_var: mq(-1,qv,cv)).pack(side="left", padx=1)
                 ctk.CTkLabel(q_frame, textvariable=qty_var, width=15).pack(side="left")
@@ -230,6 +235,41 @@ class VariantSelector:
         
         self.dialog.after(100, focus_qty)
         
+        # Apply Initial State (Editing Mode)
+        if self.initial_state:
+            # Qty
+            self.qty_var.set(str(self.initial_state.get('quantity', 1)))
+            # Note
+            self.note_entry.delete(0, 'end')
+            self.note_entry.insert(0, self.initial_state.get('note', ''))
+            
+            # Price Variant
+            saved_base = self.initial_state.get('base_price', self.product[3])
+            matched_idx = -1
+            if abs(saved_base - self.product[3]) > 0.01 and self.prices:
+                for idx, p in enumerate(self.prices):
+                    # p[5] is price
+                    if abs(p[5] - saved_base) < 0.01:
+                        matched_idx = idx
+                        break
+            
+            if matched_idx != -1 and hasattr(self, 'seg_btn') and hasattr(self, 'price_values'):
+                 try:
+                     val_str = self.price_values[matched_idx + 1]
+                     self.seg_btn.set(val_str)
+                     self.selected_price_idx.set(matched_idx)
+                 except: pass
+
+            # Modifiers
+            saved_mods = self.initial_state.get('selected_modifiers', [])
+            if saved_mods:
+                self.modifiers_visible.set(1)
+                for sm in saved_mods:
+                     mid = sm['id']
+                     if mid in self.mod_vars:
+                         self.mod_vars[mid]['checked'].set(True)
+                         self.mod_vars[mid]['qty'].set(sm.get('quantity', 1))
+
         self.update_total()
         self.toggle_layout() # Apply initial state
 
@@ -269,14 +309,25 @@ class VariantSelector:
         added_cost = 0
         if self.modifiers and self.modifiers_visible.get():
             for mid, data in self.mod_vars.items():
+                qty = data['qty'].get()
+                price = data['data'][2]
+                
+                # Update label to show total line cost
+                if 'label' in data:
+                    total_line_cost = price * qty
+                    data['label'].configure(text=f"+{CURRENCY_SYMBOL}{total_line_cost:.0f}")
+
                 if data['checked'].get():
-                    added_cost += (data['data'][2] * data['qty'].get())
+                    added_cost += (price * qty)
         
-        unit_total = base_price + added_cost
         try: qty = int(self.qty_var.get())
         except: qty = 1
         
-        final_total = unit_total * qty
+        # CHANGED: Modifiers are now treated as "Global/Per Line" (added once) 
+        # instead of "Per Item" (multiplied by quantity), based on user request.
+        # Total = (Base Price * Qty) + Total Modifier Cost
+        final_total = (base_price * qty) + added_cost
+        
         self.total_var.set(final_total)
         self.total_lbl.configure(text=f"{CURRENCY_SYMBOL}{final_total:.2f}")
 
@@ -313,7 +364,9 @@ class VariantSelector:
                         'deduct_qty': m_data[4]
                     })
         
-        effective_unit_price = base_unit_price + mods_cost
+        # Global Modifier Logic: Modifiers added once to total, not per item
+        total_cart_price = (base_unit_price * quantity) + mods_cost
+        effective_unit_price = total_cart_price / quantity if quantity > 0 else 0
         
         display_name = self.product[1]
         if price_name: display_name += f" ({price_name})"
@@ -329,9 +382,9 @@ class VariantSelector:
             'name': display_name,
             'raw_name': self.product[1],
             'price': effective_unit_price,
-            'base_price': base_unit_price, # Base Price for receipt breakdown
+            'base_price': base_unit_price, 
             'quantity': quantity,
-            'subtotal': effective_unit_price * quantity,
+            'subtotal': total_cart_price,
             'selected_modifiers': modifier_list,
             'note': note
         }

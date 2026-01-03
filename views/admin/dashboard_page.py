@@ -104,25 +104,25 @@ class DashboardPage:
                 text_color=color
             ).pack(pady=(0, 20), padx=20)
         
-        # Recent transactions - Sold Items Format
+        # Recent transactions - Compact List Format
         recent_frame = ctk.CTkFrame(self.parent, fg_color=COLORS["card_bg"], corner_radius=15)
         recent_frame.pack(fill="both", expand=True, padx=30, pady=(0, 30))
         
         recent_header = ctk.CTkLabel(
             recent_frame,
             text="Recent Sales",
-            font=ctk.CTkFont(size=18, weight="bold"),
+            font=ctk.CTkFont(size=16, weight="bold"),
             text_color=COLORS["text_primary"]
         )
-        recent_header.pack(pady=20, padx=20, anchor="w")
+        recent_header.pack(pady=(15, 10), padx=20, anchor="w")
         
-        # Sales items list container
+        # Sales items list container - more compact
         sales_list = ctk.CTkScrollableFrame(
             recent_frame,
             fg_color="transparent",
             scrollbar_button_color=COLORS["primary"]
         )
-        sales_list.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        sales_list.pack(fill="both", expand=True, padx=15, pady=(0, 15))
         
         # Get recent transaction items (last 20 items sold)
         transactions = self.database.get_transactions(20)
@@ -144,9 +144,10 @@ class DashboardPage:
                     product_id = item[2]
                     modifiers_str = item[9] if len(item) > 9 else None
                     
-                    # Create clickable item card
-                    item_card = ctk.CTkFrame(sales_list, fg_color=COLORS["dark"], corner_radius=10, cursor="hand2")
-                    item_card.pack(fill="x", pady=5)
+                    # Create compact clickable item row
+                    item_card = ctk.CTkFrame(sales_list, fg_color=COLORS["dark"], corner_radius=5, height=30, cursor="hand2")
+                    item_card.pack(fill="x", pady=2)
+                    item_card.pack_propagate(False)
                     
                      # Make entire card clickable
                     def make_clickable(card, pname, pid, q, price, sub, mods, o_type):
@@ -163,47 +164,43 @@ class DashboardPage:
 
                     click_handler = make_clickable(item_card, product_name, product_id, qty, unit_price, subtotal, modifiers_str, order_type)
                     
-                    # Content frame
+                    # Content frame - compact
                     content_frame = ctk.CTkFrame(item_card, fg_color="transparent")
-                    content_frame.pack(fill="x", padx=15, pady=12)
+                    content_frame.pack(fill="both", expand=True, padx=12, pady=5)
                     content_frame.bind("<Button-1>", click_handler)
                     
-                    # Left side: Sold text
-                    left_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
-                    left_frame.pack(side="left", fill="x", expand=True)
-                    left_frame.bind("<Button-1>", click_handler)
-                    
+                    # Left side: Sold text - smaller font
                     sold_label = ctk.CTkLabel(
-                        left_frame,
+                        content_frame,
                         text=f"Sold {qty}x {product_name}",
-                        font=ctk.CTkFont(size=14, weight="bold"),
+                        font=ctk.CTkFont(size=11),
                         text_color=COLORS["text_primary"],
                         anchor="w"
                     )
-                    sold_label.pack(side="left")
+                    sold_label.pack(side="left", fill="x", expand=True)
                     sold_label.bind("<Button-1>", click_handler)
                     
-                    # Right side: Price
-                    price_label = ctk.CTkLabel(
-                        content_frame,
-                        text=f"{CURRENCY_SYMBOL}{subtotal:.2f}",
-                        font=ctk.CTkFont(size=14, weight="bold"),
-                        text_color=COLORS["success"]
-                    )
-                    price_label.pack(side="right")
-                    price_label.bind("<Button-1>", click_handler)
-                    
-                    
+                    # Order type badge - compact
                     type_color = COLORS["info"] if order_type == "Dine In" else (COLORS["warning"] if order_type == "Take Out" else COLORS["text_secondary"])
                     
                     type_label = ctk.CTkLabel(
                         content_frame,
                         text=order_type,
-                        font=ctk.CTkFont(size=11, weight="bold"),
+                        font=ctk.CTkFont(size=9, weight="bold"),
                         text_color=type_color
                     )
-                    type_label.pack(side="right", padx=15)
+                    type_label.pack(side="right", padx=(8, 0))
                     type_label.bind("<Button-1>", click_handler)
+                    
+                    # Right side: Price - smaller font
+                    price_label = ctk.CTkLabel(
+                        content_frame,
+                        text=f"{CURRENCY_SYMBOL}{subtotal:.2f}",
+                        font=ctk.CTkFont(size=11, weight="bold"),
+                        text_color=COLORS["success"]
+                    )
+                    price_label.pack(side="right", padx=(8, 0))
+                    price_label.bind("<Button-1>", click_handler)
                     
                     item_count += 1
                 
@@ -216,6 +213,7 @@ class DashboardPage:
                 font=ctk.CTkFont(size=13),
                 text_color=COLORS["text_secondary"]
             ).pack(pady=30)
+
 
 
     def show_item_breakdown(self, product_name, product_id, quantity, unit_price, subtotal, modifiers_str, order_type="Normal"):

@@ -189,12 +189,71 @@ class HistoryPage:
             anchor="w"
         ).pack(side="left", padx=(0, 10))
         
-        # Details
+        # Details - Parse and format with order type highlighting
         details = activity[4] if len(activity) > 4 else ""
-        ctk.CTkLabel(
-            content,
-            text=details,
-            font=ctk.CTkFont(size=10),
-            text_color=COLORS["text_secondary"],
-            anchor="w"
-        ).pack(side="left", fill="x", expand=True)
+        
+        # Check if this is a SALE_COMPLETED action and parse order type
+        if action == "SALE_COMPLETED" and details:
+            # Try to extract order type from details
+            # Format: "Transaction TXN... - [OrderType] - [PaymentMethod] - ₱..."
+            parts = details.split(" - ")
+            if len(parts) >= 3:
+                # Create a frame to hold formatted details
+                details_frame = ctk.CTkFrame(content, fg_color="transparent")
+                details_frame.pack(side="left", fill="x", expand=True)
+                
+                # Transaction number
+                ctk.CTkLabel(
+                    details_frame,
+                    text=parts[0] + " - ",  # Transaction TXN...
+                    font=ctk.CTkFont(size=10),
+                    text_color=COLORS["text_secondary"],
+                    anchor="w"
+                ).pack(side="left")
+                
+                # Order Type with color coding
+                order_type = parts[1]
+                order_type_color = COLORS["primary"]  # Default
+                if "Dine In" in order_type:
+                    order_type_color = COLORS["info"]
+                elif "Take Out" in order_type:
+                    order_type_color = COLORS["warning"]
+                elif "Normal" in order_type:
+                    order_type_color = COLORS["text_secondary"]
+                
+                ctk.CTkLabel(
+                    details_frame,
+                    text=order_type + " - ",
+                    font=ctk.CTkFont(size=10, weight="bold"),
+                    text_color=order_type_color,
+                    anchor="w"
+                ).pack(side="left")
+                
+                # Payment method and amount
+                remaining = " - ".join(parts[2:])
+                ctk.CTkLabel(
+                    details_frame,
+                    text=remaining,
+                    font=ctk.CTkFont(size=10),
+                    text_color=COLORS["text_secondary"],
+                    anchor="w"
+                ).pack(side="left")
+            else:
+                # Fallback to regular display
+                ctk.CTkLabel(
+                    content,
+                    text=details,
+                    font=ctk.CTkFont(size=10),
+                    text_color=COLORS["text_secondary"],
+                    anchor="w"
+                ).pack(side="left", fill="x", expand=True)
+        else:
+            # Regular details display for non-sale actions
+            ctk.CTkLabel(
+                content,
+                text=details,
+                font=ctk.CTkFont(size=10),
+                text_color=COLORS["text_secondary"],
+                anchor="w"
+            ).pack(side="left", fill="x", expand=True)
+

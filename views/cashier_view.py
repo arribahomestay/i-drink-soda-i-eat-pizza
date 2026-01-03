@@ -105,7 +105,7 @@ class CashierView(ctk.CTkFrame):
         
         # Create UI
         self.product_grid.create()
-        self.shopping_cart.create(self.checkout, self.clear_cart)
+        self.shopping_cart.create(self.checkout, self.clear_cart, self.edit_cart_item)
         
         # Keyboard shortcuts - bind to the toplevel window
         self.winfo_toplevel().bind("<F1>", lambda e: self.checkout())
@@ -130,6 +130,45 @@ class CashierView(ctk.CTkFrame):
             return
 
         product_id = product[0]
+        
+        # --- NEW: Check Linked Ingredients Stock (Composite Inventory) ---
+        try:
+            # Check if this product has linked ingredients
+            if hasattr(self.database, 'get_product_ingredients'):
+                ingredients = self.database.get_product_ingredients(product_id)
+                if ingredients:
+                    for ing in ingredients:
+                        # ing: [link_id, ingredient_id, ingredient_name, qty_per_product, price, cost]
+                        ing_id = ing[1]
+                        qty_needed = ing[3]
+                        
+                        # Get current stock of the ingredient
+                        # We use direct cursor execution to be safe and accurate
+                        self.database.cursor.execute("SELECT name, stock FROM products WHERE id=?", (ing_id,))
+                        ing_result = self.database.cursor.fetchone()
+                        
+                        if ing_result:
+                            ing_real_name = ing_result[0]
+                            ing_current_stock = ing_result[1]
+                            
+                            # Check 1: Is ingredient completely out of stock?
+                            if ing_current_stock <= 0:
+                                messagebox.showwarning(
+                                    "Unavailable", 
+                                    f"Cannot sell {product[1]}.\n\nReason: Ingredient '{ing_real_name}' is Out of Stock!"
+                                )
+                                return
+                                
+                            # Check 2: Is there enough ingredient stock for at least ONE unit of this product?
+                            if ing_current_stock < qty_needed:
+                                messagebox.showwarning(
+                                    "Unavailable", 
+                                    f"Cannot sell {product[1]}.\n\nReason: Not enough '{ing_real_name}'.\n(Need {qty_needed}, Have {ing_current_stock})"
+                                )
+                                return
+        except Exception as e:
+            print(f"Ingredient stock check error: {e}")
+        # -----------------------------------------------------------------
         
         # Get global modifiers (Add-ons)
         global_modifiers = self.database.get_all_global_modifiers()
@@ -204,6 +243,31 @@ class CashierView(ctk.CTkFrame):
     def add_customized_item_to_cart(self, item):
         """Add customized item to cart (from variant selector)"""
         self.shopping_cart.add_item(item)
+
+    def edit_cart_item(self, item):
+        """Edit an existing cart item"""
+        product_id = item['product_id']
+        # Fetch full product details
+        product = self.database.get_product_by_id(product_id)
+        if not product:
+            messagebox.showerror("Error", "Product not found")
+            return
+
+        # Fetch dependencies
+        global_modifiers = self.database.get_all_global_modifiers()
+        prices = self.database.get_product_prices(product_id)
+        
+        # Open Selector with Initial State
+        selector = VariantSelector(
+            self,
+            product,
+            [], # Variants deprecated
+            global_modifiers,
+            lambda new_item: self.shopping_cart.replace_item(item, new_item),
+            prices,
+            initial_state=item
+        )
+        selector.show()
     
     def clear_cart(self):
         """Clear all items from cart"""

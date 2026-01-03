@@ -1,0 +1,7 @@
+Traceback (most recent call last):
+  File "c:\Users\USER\Documents\POINTOFSALE\views\cashier\payment_dialog.py", line 303, in process_payment
+    img = renderer.generate_image(t_dummy, self.cart_items)
+  File "c:\Users\USER\Documents\POINTOFSALE\receipt_renderer.py", line 314, in generate_image
+    change = pay_amt - total if pay_amt > 0 else 0
+                                ^^^^^^^^^^^
+TypeError: '>' not supported between instances of 'str' and 'int'

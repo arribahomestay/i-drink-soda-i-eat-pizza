@@ -26,6 +26,7 @@ class TransactionsPage:
         
         # Initialize filter state
         self.filter_cashier = None
+        self.filter_order_type = None
         self.filter_date_range = None
         self.custom_start_date = None
         self.custom_end_date = None
@@ -267,8 +268,29 @@ class TransactionsPage:
         total_frame = ctk.CTkFrame(footer, fg_color=COLORS["card_bg"], corner_radius=10)
         total_frame.pack(fill="x", pady=(0, 10))
         
-        ctk.CTkLabel(total_frame, text="TOTAL", font=ctk.CTkFont(size=14, weight="bold")).pack(side="left", padx=15, pady=10)
-        ctk.CTkLabel(total_frame, text=f"{CURRENCY_SYMBOL}{display_total:.2f}", font=ctk.CTkFont(size=20, weight="bold"), text_color=COLORS["success"]).pack(side="right", padx=15, pady=10)
+        # Total Row
+        r1 = ctk.CTkFrame(total_frame, fg_color="transparent")
+        r1.pack(fill="x", padx=15, pady=(10, 5))
+        ctk.CTkLabel(r1, text="TOTAL", font=ctk.CTkFont(size=14, weight="bold")).pack(side="left")
+        ctk.CTkLabel(r1, text=f"{CURRENCY_SYMBOL}{display_total:.2f}", font=ctk.CTkFont(size=20, weight="bold"), text_color=COLORS["success"]).pack(side="right")
+        
+        # Payment Details (if available)
+        if len(txn) > 11:
+            pay_amt = txn[11] or 0
+            change_amt = txn[12] or 0
+            
+            if pay_amt > 0:
+                # Paid
+                r2 = ctk.CTkFrame(total_frame, fg_color="transparent")
+                r2.pack(fill="x", padx=15, pady=(0, 2))
+                ctk.CTkLabel(r2, text=f"Paid ({txn[6]})", font=ctk.CTkFont(size=12), text_color=COLORS["text_secondary"]).pack(side="left")
+                ctk.CTkLabel(r2, text=f"{CURRENCY_SYMBOL}{pay_amt:.2f}", font=ctk.CTkFont(size=12)).pack(side="right")
+                
+                # Change
+                r3 = ctk.CTkFrame(total_frame, fg_color="transparent")
+                r3.pack(fill="x", padx=15, pady=(0, 10))
+                ctk.CTkLabel(r3, text="Change", font=ctk.CTkFont(size=12), text_color=COLORS["text_secondary"]).pack(side="left")
+                ctk.CTkLabel(r3, text=f"{CURRENCY_SYMBOL}{change_amt:.2f}", font=ctk.CTkFont(size=12)).pack(side="right")
         
         # Close Button
         ctk.CTkButton(
@@ -309,6 +331,20 @@ class TransactionsPage:
         menu.add_cascade(label="👤 Select Cashier", menu=cashier_menu)
         menu.add_separator()
         
+        # Order Type Filter
+        type_menu = tk.Menu(menu, tearoff=0, bg=COLORS["card_bg"], fg=COLORS["text_primary"],
+                              activebackground=COLORS["primary"], activeforeground="white",
+                              font=("Segoe UI", 10))
+        
+        types = ["Normal", "Dine In", "Take Out"]
+        type_menu.add_command(label="All Types", command=lambda: self.filter_by_order_type(None))
+        type_menu.add_separator()
+        for t in types:
+             type_menu.add_command(label=t, command=lambda x=t: self.filter_by_order_type(x))
+        
+        menu.add_cascade(label="🍽️ Select Order Type", menu=type_menu)
+        menu.add_separator()
+        
         # Date range filters
         menu.add_command(label="📅 Recent (Last 7 days)", command=lambda: self.filter_by_date_range("recent"))
         menu.add_command(label="📅 Today", command=lambda: self.filter_by_date_range("today"))
@@ -332,6 +368,16 @@ class TransactionsPage:
         else:
             self.filter_cashier = cashier[0]  # user_id
             self.filter_btn.configure(text="👤", fg_color=COLORS["info"])
+        
+        self.refresh_transactions()
+
+    def filter_by_order_type(self, order_type):
+        """Filter transactions by order type"""
+        if order_type is None:
+            self.filter_order_type = None
+        else:
+            self.filter_order_type = order_type
+            self.filter_btn.configure(text="🍽️", fg_color=COLORS["info"])
         
         self.refresh_transactions()
     
@@ -481,6 +527,7 @@ class TransactionsPage:
     def clear_filters(self):
         """Clear all filters"""
         self.filter_cashier = None
+        self.filter_order_type = None
         self.filter_date_range = None
         self.custom_start_date = None
         self.custom_end_date = None
@@ -611,6 +658,11 @@ class TransactionsPage:
         if self.filter_cashier:
             query += " AND t.cashier_id = ?"
             params.append(self.filter_cashier)
+        
+        # Apply order type filter
+        if self.filter_order_type:
+            query += " AND t.order_type = ?"
+            params.append(self.filter_order_type)
         
         # Apply date range filter
         if self.filter_date_range and self.custom_start_date and self.custom_end_date:

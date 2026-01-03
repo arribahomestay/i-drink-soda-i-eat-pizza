@@ -5,6 +5,7 @@ Handles payment processing and transaction completion
 import customtkinter as ctk
 from tkinter import messagebox
 from datetime import datetime
+import os
 from config import COLORS, CURRENCY_SYMBOL, TAX_RATE
 from receipt_renderer import ReceiptRenderer
 
@@ -231,23 +232,149 @@ class PaymentDialog:
                 # Construct transaction dummy for receipt
                 t_dummy = [
                     transaction_id, transaction_number, self.user_data['id'],
-                    self.total, self.tax, 0, method, tendered,
-                    datetime.now().strftime('%Y-%m-%d %H:%M:%S'), self.user_data['full_name'],
-                    self.order_type # Index 10
+                    self.total, self.tax, 0, method, self.order_type,
+                    datetime.now().strftime('%Y-%m-%d %H:%M:%S'), self.user_data.get('username', 'Cashier'),
+                    self.user_data.get('full_name', 'Cashier'), tendered, change
                 ]
                 
-                receipt_file = renderer.save_receipt(t_dummy, self.cart_items, folder="receipts")
+                
+                # Close payment dialog first
+                dialog.destroy()
+                
+                # Show loading screen for printing
+                loading_dialog = ctk.CTkToplevel(self.parent)
+                loading_dialog.title("Processing...")
+                loading_dialog.geometry("400x200")
+                loading_dialog.configure(fg_color=COLORS["dark"])
+                loading_dialog.transient(self.parent)
+                loading_dialog.grab_set()
+                loading_dialog.resizable(False, False)
+                
+                # Center the loading dialog
+                x = (loading_dialog.winfo_screenwidth() - 400) // 2
+                y = (loading_dialog.winfo_screenheight() - 200) // 2
+                loading_dialog.geometry(f"+{x}+{y}")
+                
+                # Loading content
+                loading_frame = ctk.CTkFrame(loading_dialog, fg_color="transparent")
+                loading_frame.pack(expand=True, fill="both", padx=30, pady=30)
+                
+                # Printer icon and text
+                ctk.CTkLabel(
+                    loading_frame,
+                    text="🖨️",
+                    font=ctk.CTkFont(size=48),
+                    text_color=COLORS["primary"]
+                ).pack(pady=(20, 10))
+                
+                ctk.CTkLabel(
+                    loading_frame,
+                    text="Printing receipt...",
+                    font=ctk.CTkFont(size=18, weight="bold"),
+                    text_color=COLORS["text_primary"]
+                ).pack(pady=5)
+                
+                status_label = ctk.CTkLabel(
+                    loading_frame,
+                    text="Please wait",
+                    font=ctk.CTkFont(size=12),
+                    text_color=COLORS["text_secondary"]
+                )
+                status_label.pack(pady=5)
+                
+                # Update the UI
+                loading_dialog.update()
+                
+                # Initialize variables
+                receipt_file = "receipts/receipt.bmp"
+                print_status = ""
+                print_success = False
+                
+                # Generate BMP receipt (better for thermal printers)
+                try:
+                    status_label.configure(text="Generating receipt...")
+                    loading_dialog.update()
+                    
+                    # Get receipt settings
+                    settings = self.database.get_receipt_settings()
+                    renderer = ReceiptRenderer(settings)
+                    
+                    # Generate receipt image
+                    img = renderer.generate_image(t_dummy, self.cart_items)
+                    
+                    # Save as BMP (better compatibility with thermal printers)
+                    # Use absolute path to ensure Windows can find the file
+                    receipts_dir = os.path.abspath("receipts")
+                    os.makedirs(receipts_dir, exist_ok=True)
+                    txn_number = transaction_number
+                    receipt_file = os.path.join(receipts_dir, f"RCP_{txn_number}.bmp")
+                    img.save(receipt_file, 'BMP')
+                    
+                    status_label.configure(text="Receipt generated, sending to printer...")
+                    loading_dialog.update()
+                    
+                    # Print BMP file silently to default printer (no dialog)
+                    try:
+                        status_label.configure(text="Printing receipt...")
+                        loading_dialog.update()
+                        
+                        # Try to use the old printer_utils method which works
+                        try:
+                            from printer_utils import print_image_to_default_printer
+                            success, message = print_image_to_default_printer(receipt_file)
+                            
+                            if success:
+                                print_success = True
+                                print_status = f"\n✓ {message}"
+                                status_label.configure(text="Print successful!", text_color=COLORS["success"])
+                            else:
+                                print_status = f"\n⚠ {message}"
+                                status_label.configure(text="Print failed - Receipt saved", text_color=COLORS["warning"])
+                        except ImportError:
+                            # Fallback: Use simple print command
+                            import subprocess
+                            result = subprocess.run(
+                                ["cmd", "/c", "print", f"/D:POS-80", receipt_file],
+                                capture_output=True,
+                                timeout=10,
+                                creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+                            )
+                            
+                            if result.returncode == 0:
+                                print_success = True
+                                print_status = "\n✓ Receipt sent to printer"
+                                status_label.configure(text="Print successful!", text_color=COLORS["success"])
+                            else:
+                                print_status = "\n⚠ Print command failed"
+                                status_label.configure(text="Print failed - Receipt saved", text_color=COLORS["warning"])
+                        
+                    except Exception as e:
+                        print_status = f"\n⚠ Print failed: {str(e)}"
+                        status_label.configure(text="Print failed - Receipt saved", text_color=COLORS["warning"])
+                    
+                except Exception as e:
+                    import traceback
+                    with open("error_log.txt", "w") as f:
+                        f.write(traceback.format_exc())
+                    print_status = f"\n⚠ Error: {str(e)}"
+                    status_label.configure(text=f"Error - {str(e)}", text_color=COLORS["danger"])
+                
+                # Wait a moment to show the status
+                loading_dialog.after(1000)  # 1 second delay
+                loading_dialog.update()
                 
                 # Log activity
                 self.database.log_activity(
                     self.user_data['id'],
                     self.user_data['username'],
                     "SALE_COMPLETED",
-                    f"Transaction {transaction_number} - {method} - {CURRENCY_SYMBOL}{self.total:.2f}"
+                    f"Transaction {transaction_number} - {self.order_type} - {method} - {CURRENCY_SYMBOL}{self.total:.2f}"
                 )
                 
-                dialog.destroy()
+                # Close loading dialog
+                loading_dialog.destroy()
                 
+                # Show success message
                 messagebox.showinfo(
                     "Success",
                     f"Transaction completed!\n\n" +
@@ -255,8 +382,9 @@ class PaymentDialog:
                     f"Total: {CURRENCY_SYMBOL}{self.total:.2f}\n" +
                     f"Payment: {method}\n" +
                     f"Tendered: {CURRENCY_SYMBOL}{tendered:.2f}\n" +
-                    f"Change: {CURRENCY_SYMBOL}{change:.2f}\n\n" +
-                    f"Receipt saved: {receipt_file}"
+                    f"Change: {CURRENCY_SYMBOL}{change:.2f}\n" +
+                    f"Receipt: {receipt_file}" +
+                    print_status
                 )
                 
                 # Call success callback

@@ -324,9 +324,12 @@ class SettingsPage:
             text_color=COLORS["text_primary"]
         ).pack(anchor="w", padx=20, pady=(20, 10))
         
-        # Form Container
-        form = ctk.CTkFrame(left_frame, fg_color="transparent")
-        form.pack(fill="x", padx=20)
+        # Form Container - SCROLLABLE
+        form_scroll = ctk.CTkScrollableFrame(left_frame, fg_color="transparent")
+        form_scroll.pack(fill="both", expand=True, padx=20, pady=(0, 10))
+        
+        form = ctk.CTkFrame(form_scroll, fg_color="transparent")
+        form.pack(fill="x")
         
         # Get current settings
         current_settings = self.database.get_receipt_settings()
@@ -336,6 +339,7 @@ class SettingsPage:
         s_phone = current_settings[3] if current_settings and current_settings[3] else ""
         s_email = current_settings[4] if current_settings and current_settings[4] else ""
         s_footer = current_settings[6] if current_settings and current_settings[6] else "Thank you for shopping!"
+        s_logo = current_settings[7] if current_settings and len(current_settings) > 7 and current_settings[7] else ""
         
         # StringVars for live preview
         sv_name = ctk.StringVar(value=s_name)
@@ -343,6 +347,93 @@ class SettingsPage:
         sv_phone = ctk.StringVar(value=s_phone)
         sv_email = ctk.StringVar(value=s_email)
         sv_footer = ctk.StringVar(value=s_footer)
+        sv_logo = ctk.StringVar(value=s_logo)
+        
+        # Logo Upload Section
+        ctk.CTkLabel(form, text="Store Logo (Optional)", font=ctk.CTkFont(weight="bold")).pack(anchor="w", pady=(10, 5))
+        
+        logo_frame = ctk.CTkFrame(form, fg_color="transparent")
+        logo_frame.pack(fill="x", pady=(0, 5))
+        
+        import os
+
+        # Define Label (Unpacked)
+        display_text = os.path.basename(s_logo) if s_logo else "No logo selected"
+        logo_path_label = ctk.CTkLabel(
+            logo_frame, 
+            text=display_text,
+            text_color=COLORS["text_secondary"],
+            anchor="w"
+        )
+        
+        def upload_logo():
+            from tkinter import filedialog
+            import shutil
+            
+            # Open file dialog
+            file_path = filedialog.askopenfilename(
+                title="Select Logo Image",
+                filetypes=[
+                    ("Image files", "*.png *.jpg *.jpeg *.bmp *.gif"),
+                    ("All files", "*.*")
+                ]
+            )
+            
+            if file_path:
+                try:
+                    # Create logos directory if it doesn't exist
+                    logos_dir = os.path.abspath("logos")
+                    os.makedirs(logos_dir, exist_ok=True)
+                    
+                    # Copy file to logos directory
+                    filename = os.path.basename(file_path)
+                    dest_path = os.path.join(logos_dir, f"store_logo_{filename}")
+                    shutil.copy2(file_path, dest_path)
+                    
+                    # Update the path
+                    sv_logo.set(dest_path)
+                    logo_path_label.configure(text=os.path.basename(dest_path))
+                    
+                    # Update preview
+                    update_preview()
+                    
+                    messagebox.showinfo("Success", "Logo uploaded successfully!")
+                except Exception as e:
+                    messagebox.showerror("Error", f"Failed to upload logo: {str(e)}")
+
+        def remove_logo():
+            sv_logo.set("")
+            logo_path_label.configure(text="No logo selected")
+            update_preview()
+        
+        # Pack Buttons FIRST (Right side)
+        ctk.CTkButton(
+            logo_frame, 
+            text="Remove", 
+            command=remove_logo,
+            width=80,
+            height=30,
+            fg_color=COLORS["danger"]
+        ).pack(side="right")
+
+        ctk.CTkButton(
+            logo_frame, 
+            text="Upload Logo", 
+            command=upload_logo,
+            width=100,
+            height=30,
+            fg_color=COLORS["info"]
+        ).pack(side="right", padx=(5, 5))
+        
+        # Pack Label LAST (Left side, taking remaining space)
+        logo_path_label.pack(side="left", fill="x", expand=True)
+        
+        ctk.CTkLabel(
+            form,
+            text="Logo will be converted to black & white for thermal printing",
+            font=ctk.CTkFont(size=10, slant="italic"),
+            text_color=COLORS["text_secondary"]
+        ).pack(anchor="w", pady=(0, 10))
         
         # Store Name
         ctk.CTkLabel(form, text="Store Name").pack(anchor="w", pady=(10, 5))
@@ -380,7 +471,7 @@ class SettingsPage:
                     email=email_entry.get(),
                     tax_rate=new_tax,
                     footer=footer_entry.get(),
-                    logo_path="",
+                    logo_path=sv_logo.get(),  # Save logo path
                     paper_width=80
                 )
                 messagebox.showinfo("Success", "Settings saved successfully!")
@@ -419,6 +510,7 @@ class SettingsPage:
             temp_settings[3] = sv_phone.get()
             temp_settings[4] = sv_email.get()
             temp_settings[6] = sv_footer.get()
+            temp_settings[7] = sv_logo.get()  # Include logo path
             
             renderer = ReceiptRenderer(temp_settings)
             
@@ -444,12 +536,13 @@ class SettingsPage:
         sv_addr.trace_add("write", update_preview)
         sv_phone.trace_add("write", update_preview)
         sv_footer.trace_add("write", update_preview)
+        sv_logo.trace_add("write", update_preview)  # Bind logo changes
         
         # Initial call
         update_preview()
     
     def setup_other_settings_tab(self, parent_frame):
-        """Setup Other Settings tab - Placeholder for future settings"""
+        """Setup Other Settings tab - Maintenance & Utilities"""
         # Container
         container = ctk.CTkFrame(parent_frame, fg_color=COLORS["card_bg"], corner_radius=15)
         container.pack(fill="both", expand=True, padx=20, pady=20)
@@ -460,19 +553,46 @@ class SettingsPage:
         
         ctk.CTkLabel(
             header,
-            text="⚙️ Other Settings",
+            text="🛠️ System Maintenance",
             font=ctk.CTkFont(size=20, weight="bold"),
             text_color=COLORS["text_primary"]
         ).pack(side="left")
         
-        # Placeholder content
-        content_frame = ctk.CTkFrame(container, fg_color="transparent")
-        content_frame.pack(fill="both", expand=True, padx=30, pady=20)
+        content = ctk.CTkFrame(container, fg_color="transparent")
+        content.pack(fill="both", expand=True, padx=30)
+        
+        # Optimization Box
+        opt_frame = ctk.CTkFrame(content, fg_color=COLORS.get("dark", "#2C3E50"), corner_radius=10)
+        opt_frame.pack(fill="x", pady=10)
         
         ctk.CTkLabel(
-            content_frame,
-            text="Additional settings will be added here",
-            font=ctk.CTkFont(size=14),
-            text_color=COLORS["text_secondary"]
-        ).pack(pady=50)
+             opt_frame, 
+             text="System Optimizer", 
+             font=ctk.CTkFont(size=16, weight="bold")
+        ).pack(anchor="w", padx=20, pady=(15, 5))
+        
+        ctk.CTkLabel(
+             opt_frame, 
+             text="Performs database cleanup (VACUUM/ANALYZE) and deletes old temporary receipt images.", 
+             text_color=COLORS["text_secondary"]
+        ).pack(anchor="w", padx=20, pady=(0, 15))
+
+        def run_opt():
+             try:
+                 # Import here to avoid circular dependencies if any
+                 from system_optimizer import SystemOptimizer
+                 opt = SystemOptimizer()
+                 opt.run_all()
+                 messagebox.showinfo("Optimization Complete", "System optimization finished successfully.\n\n- Database compacted\n- Old receipts cleaned")
+             except Exception as e:
+                 messagebox.showerror("Error", f"Optimization failed: {e}")
+        
+        ctk.CTkButton(
+            opt_frame, 
+            text="🚀 Run Optimization Now", 
+            command=run_opt,
+            height=40,
+            fg_color=COLORS["primary"],
+            font=ctk.CTkFont(weight="bold")
+        ).pack(padx=20, pady=(0, 20), anchor="w")
 

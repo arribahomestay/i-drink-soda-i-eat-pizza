@@ -110,6 +110,14 @@ class Database:
         try:
             self.cursor.execute("ALTER TABLE products ADD COLUMN is_available INTEGER DEFAULT 1")
         except: pass
+
+        # Migration: Add payment_amount and change_amount to transactions
+        try:
+            self.cursor.execute("ALTER TABLE transactions ADD COLUMN payment_amount REAL DEFAULT 0")
+        except: pass
+        try:
+            self.cursor.execute("ALTER TABLE transactions ADD COLUMN change_amount REAL DEFAULT 0")
+        except: pass
         
         # Product Variants table
         self.cursor.execute('''
@@ -419,12 +427,26 @@ class Database:
     def authenticate_user(self, username, password):
         """Authenticate user and return user data"""
         hashed_password = self.hash_password(password)
+        
+        # Add is_active column if it doesn't exist (migration)
+        try:
+            self.cursor.execute("ALTER TABLE users ADD COLUMN is_active INTEGER DEFAULT 1")
+            self.conn.commit()
+        except:
+            pass  # Column already exists
+        
         self.cursor.execute(
-            "SELECT id, username, role, full_name FROM users WHERE username = ? AND password = ?",
+            "SELECT id, username, role, full_name, is_active FROM users WHERE username = ? AND password = ?",
             (username, hashed_password)
         )
         result = self.cursor.fetchone()
         if result:
+            # Check if user is active (default to active if column doesn't exist)
+            is_active = result[4] if len(result) > 4 and result[4] is not None else 1
+            
+            if not is_active:
+                return None  # User is deactivated
+            
             return {
                 "id": result[0],
                 "username": result[1],
@@ -594,7 +616,7 @@ class Database:
         self.cursor.execute(
             """SELECT t.id, t.transaction_number, t.cashier_id, t.total_amount, 
                       t.tax_amount, t.discount_amount, t.payment_method, t.order_type,
-                      t.created_at, u.username, u.full_name
+                      t.created_at, u.username, u.full_name, t.payment_amount, t.change_amount
                FROM transactions t
                LEFT JOIN users u ON t.cashier_id = u.id
                WHERE t.id = ?""",
@@ -777,9 +799,9 @@ class Database:
         self.cursor.execute("""
             INSERT INTO transactions 
             (transaction_number, cashier_id, total_amount, tax_amount, 
-             discount_amount, payment_method, order_type, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'completed')
-        """, (transaction_number, cashier_id, total, tax_amount, discount_amount, payment_method, order_type))
+             discount_amount, payment_method, order_type, status, payment_amount, change_amount)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?)
+        """, (transaction_number, cashier_id, total, tax_amount, discount_amount, payment_method, order_type, payment_amount, change_amount))
         
         transaction_id = self.cursor.lastrowid
         
@@ -799,15 +821,15 @@ class Database:
                   variant_id, variant_name, modifiers))
             
             
-            # Update MAIN PRODUCT stock
+            # Update MAIN PRODUCT stock (Prevent negative)
             self.cursor.execute("""
-                UPDATE products SET stock = stock - ? WHERE id = ?
+                UPDATE products SET stock = MAX(0, stock - ?) WHERE id = ?
             """, (item['quantity'], item['id']))
 
             # Update VARIANT stock (Critical Fix)
             if variant_id:
                 self.cursor.execute("""
-                    UPDATE product_variants SET stock = stock - ? WHERE id = ?
+                    UPDATE product_variants SET stock = MAX(0, stock - ?) WHERE id = ?
                 """, (item['quantity'], variant_id))
             
             # Deduct LINKED INGREDIENTS stock
@@ -820,7 +842,7 @@ class Database:
                 # Total to deduct = quantity of product sold * quantity of ingredient per product
                 total_deduct = item['quantity'] * qty_per_product
                 self.cursor.execute("""
-                    UPDATE products SET stock = stock - ? WHERE id = ?
+                    UPDATE products SET stock = MAX(0, stock - ?) WHERE id = ?
                 """, (total_deduct, ingredient_id))
 
             # Deduct MODIFIER linked stock (Add-ons)
@@ -848,7 +870,7 @@ class Database:
                                 total_mod_deduct = item_qty * m_qty * deduct_factor
                                 
                                 self.cursor.execute("""
-                                    UPDATE products SET stock = stock - ? WHERE id = ?
+                                    UPDATE products SET stock = MAX(0, stock - ?) WHERE id = ?
                                 """, (total_mod_deduct, linked_pid))
                             except Exception:
                                 pass # Prevent crash on bad data
