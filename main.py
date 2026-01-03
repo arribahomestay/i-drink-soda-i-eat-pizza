@@ -14,7 +14,7 @@ class POSApplication(ctk.CTk):
     def __init__(self):
         super().__init__()
         
-        # Configure window
+         # Configure window
         self.title(APP_NAME)
         
         # Start with small login window

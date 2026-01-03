@@ -3,6 +3,7 @@ Inventory management page for admin view
 """
 import customtkinter as ctk
 from tkinter import messagebox
+from datetime import datetime
 from config import COLORS, CURRENCY_SYMBOL
 
 
@@ -399,13 +400,26 @@ class InventoryPage:
         form_frame = ctk.CTkFrame(self.inventory_content, fg_color=COLORS["dark"], corner_radius=8)
         form_frame.pack(fill="both", expand=True, padx=20, pady=(0, 15))
         
-        # Product search - compact
+        # Product search - with button
+        search_header = ctk.CTkFrame(form_frame, fg_color="transparent")
+        search_header.pack(fill="x", padx=15, pady=(15, 3))
+        
         ctk.CTkLabel(
-            form_frame,
-            text="Select Product",
+            search_header,
+            text="Select Product to Add Stock",
             font=ctk.CTkFont(size=11, weight="bold"),
             text_color=COLORS["text_primary"]
-        ).pack(pady=(15, 3), padx=15, anchor="w")
+        ).pack(side="left")
+
+        ctk.CTkButton(
+            search_header,
+            text="📋 View All Items",
+            command=self.show_all_items_modal,
+            height=24,
+            width=100,
+            font=ctk.CTkFont(size=10, weight="bold"),
+            fg_color=COLORS["info"]
+        ).pack(side="right")
         
         search_var = ctk.StringVar()
         search_entry = ctk.CTkEntry(
@@ -417,17 +431,15 @@ class InventoryPage:
         )
         search_entry.pack(fill="x", padx=15, pady=(0, 5))
         
-        # Compact product list
+        # Product list
         products_frame = ctk.CTkScrollableFrame(
             form_frame,
             fg_color=COLORS["card_bg"],
             corner_radius=5,
-            height=120,
+            height=300,
             scrollbar_button_color=COLORS["primary"]
         )
-        products_frame.pack(fill="x", padx=15, pady=(0, 8))
-        
-        selected_product = [None]
+        products_frame.pack(fill="both", expand=True, padx=15, pady=(0, 15))
         
         def update_product_list(*args):
             for widget in products_frame.winfo_children():
@@ -436,154 +448,37 @@ class InventoryPage:
             search_term = search_var.get().lower()
             all_products = self.database.get_all_products()
             
-            # Filter: Match search AND (Stock Tracking is ON)
-            # Indices: use_stock_tracking=12
+            # Filter matches
             filtered = []
             for p in all_products:
-                # Check stock tracking (default to 1 if missing/None)
                 use_stock = p[12] if len(p) > 12 and p[12] is not None else 1
-                if use_stock == 0:
-                    continue
+                if use_stock == 0: continue
                 
-                # Check search term
                 if search_term in p[1].lower() or (p[5] and search_term in p[5].lower()):
                     filtered.append(p)
             
             if not filtered:
-                ctk.CTkLabel(
-                    products_frame,
-                    text="No products found",
-                    font=ctk.CTkFont(size=10),
-                    text_color=COLORS["text_secondary"]
-                ).pack(pady=10)
+                ctk.CTkLabel(products_frame, text="No products found", text_color=COLORS["text_secondary"]).pack(pady=10)
                 return
             
-            for product in filtered[:8]:
+            for product in filtered[:20]: # Show top 20 matches
+                stock_color = COLORS["danger"] if product[4] < 10 else COLORS["text_primary"]
                 btn = ctk.CTkButton(
                     products_frame,
                     text=f"{product[1]} - Stock: {product[4]}",
-                    command=lambda p=product: select_product(p),
-                    height=28,
-                    font=ctk.CTkFont(size=10),
+                    command=lambda p=product: self.open_stock_modal(p, "add", lambda: update_product_list()),
+                    height=40,
+                    font=ctk.CTkFont(size=15, weight="bold"),
                     fg_color="transparent",
+                    text_color=stock_color,
                     hover_color=COLORS["primary"],
                     anchor="w"
                 )
                 btn.pack(fill="x", pady=1, padx=3)
         
-        def select_product(product):
-            selected_product[0] = product
-            selected_label.configure(text=f"✓ {product[1]} (Stock: {product[4]})")
-            quantity_entry.focus()
-        
         search_var.trace("w", update_product_list)
         update_product_list()
-        
-        # Selected product - compact
-        selected_label = ctk.CTkLabel(
-            form_frame,
-            text="No product selected",
-            font=ctk.CTkFont(size=10),
-            text_color=COLORS["info"]
-        )
-        selected_label.pack(pady=(0, 8), padx=15, anchor="w")
-        
-        # Compact inputs in grid
-        inputs_frame = ctk.CTkFrame(form_frame, fg_color="transparent")
-        inputs_frame.pack(fill="x", padx=15, pady=(0, 8))
-        inputs_frame.grid_columnconfigure((0, 1), weight=1)
-        
-        # Quantity
-        ctk.CTkLabel(
-            inputs_frame,
-            text="Quantity",
-            font=ctk.CTkFont(size=10, weight="bold"),
-            text_color=COLORS["text_primary"]
-        ).grid(row=0, column=0, sticky="w", pady=(0, 2))
-        
-        quantity_entry = ctk.CTkEntry(
-            inputs_frame,
-            placeholder_text="0",
-            height=28,
-            font=ctk.CTkFont(size=11)
-        )
-        quantity_entry.grid(row=1, column=0, sticky="ew", padx=(0, 5))
-        
-        # Reason
-        ctk.CTkLabel(
-            inputs_frame,
-            text="Reason",
-            font=ctk.CTkFont(size=10, weight="bold"),
-            text_color=COLORS["text_primary"]
-        ).grid(row=0, column=1, sticky="w", pady=(0, 2))
-        
-        reason_var = ctk.StringVar(value="Purchase")
-        reason_dropdown = ctk.CTkComboBox(
-            inputs_frame,
-            values=["Purchase", "Return", "Adjustment", "Other"],
-            variable=reason_var,
-            height=28,
-            font=ctk.CTkFont(size=10),
-            dropdown_font=ctk.CTkFont(size=10)
-        )
-        reason_dropdown.grid(row=1, column=1, sticky="ew", padx=(5, 0))
-        
-        # Notes - compact
-        ctk.CTkLabel(
-            form_frame,
-            text="Notes (Optional)",
-            font=ctk.CTkFont(size=10, weight="bold"),
-            text_color=COLORS["text_primary"]
-        ).pack(pady=(5, 2), padx=15, anchor="w")
-        
-        notes_entry = ctk.CTkEntry(
-            form_frame,
-            placeholder_text="Additional notes...",
-            height=28,
-            font=ctk.CTkFont(size=10)
-        )
-        notes_entry.pack(fill="x", padx=15, pady=(0, 12))
-        
-        # Compact submit button
-        def submit_stock_in():
-            if not selected_product[0]:
-                messagebox.showerror("Error", "Please select a product")
-                return
-            
-            try:
-                quantity = int(quantity_entry.get())
-                if quantity <= 0:
-                    messagebox.showerror("Error", "Quantity must be greater than 0")
-                    return
-            except ValueError:
-                messagebox.showerror("Error", "Please enter a valid quantity")
-                return
-            
-            product = selected_product[0]
-            self.database.update_product_stock(product[0], quantity)
-            
-            notes = notes_entry.get() or ""
-            details = f"Stock In: {product[1]} +{quantity} ({reason_var.get()}) {notes}"
-            self.database.log_activity(self.user_data['id'], self.user_data['username'], "Stock In", details)
-            
-            messagebox.showinfo("Success", f"Added {quantity} units to {product[1]}\nNew stock: {product[4] + quantity}")
-            
-            selected_product[0] = None
-            selected_label.configure(text="No product selected")
-            quantity_entry.delete(0, "end")
-            notes_entry.delete(0, "end")
-            search_var.set("")
-            search_entry.focus()
-        
-        ctk.CTkButton(
-            form_frame,
-            text="✓ Add Stock",
-            command=submit_stock_in,
-            height=35,
-            font=ctk.CTkFont(size=12, weight="bold"),
-            fg_color=COLORS["success"],
-            hover_color="#27ae60"
-        ).pack(fill="x", padx=15, pady=(0, 15))
+
     
     def show_stock_out(self):
         """Show stock out interface for removing inventory"""
@@ -599,13 +494,26 @@ class InventoryPage:
         form_frame = ctk.CTkFrame(self.inventory_content, fg_color=COLORS["dark"], corner_radius=8)
         form_frame.pack(fill="both", expand=True, padx=20, pady=(0, 15))
         
-        # Product search - compact
+        # Product search - with button
+        search_header = ctk.CTkFrame(form_frame, fg_color="transparent")
+        search_header.pack(fill="x", padx=15, pady=(15, 3))
+        
         ctk.CTkLabel(
-            form_frame,
-            text="Select Product",
+            search_header,
+            text="Select Product to Remove Stock",
             font=ctk.CTkFont(size=11, weight="bold"),
             text_color=COLORS["text_primary"]
-        ).pack(pady=(15, 3), padx=15, anchor="w")
+        ).pack(side="left")
+
+        ctk.CTkButton(
+            search_header,
+            text="📋 View All Items",
+            command=self.show_all_items_modal,
+            height=24,
+            width=100,
+            font=ctk.CTkFont(size=10, weight="bold"),
+            fg_color=COLORS["info"]
+        ).pack(side="right")
         
         search_var = ctk.StringVar()
         search_entry = ctk.CTkEntry(
@@ -617,17 +525,15 @@ class InventoryPage:
         )
         search_entry.pack(fill="x", padx=15, pady=(0, 5))
         
-        # Compact product list
+        # Product list
         products_frame = ctk.CTkScrollableFrame(
             form_frame,
             fg_color=COLORS["card_bg"],
             corner_radius=5,
-            height=120,
+            height=300,
             scrollbar_button_color=COLORS["primary"]
         )
-        products_frame.pack(fill="x", padx=15, pady=(0, 8))
-        
-        selected_product = [None]
+        products_frame.pack(fill="both", expand=True, padx=15, pady=(0, 15))
         
         def update_product_list(*args):
             for widget in products_frame.winfo_children():
@@ -636,36 +542,27 @@ class InventoryPage:
             search_term = search_var.get().lower()
             all_products = self.database.get_all_products()
             
-            # Filter: Match search AND (Stock Tracking is ON)
-            # Indices: use_stock_tracking=12
+            # Filter matches
             filtered = []
             for p in all_products:
-                # Check stock tracking (default to 1 if missing/None)
                 use_stock = p[12] if len(p) > 12 and p[12] is not None else 1
-                if use_stock == 0:
-                    continue
+                if use_stock == 0: continue
                 
-                # Check search term
                 if search_term in p[1].lower() or (p[5] and search_term in p[5].lower()):
                     filtered.append(p)
             
             if not filtered:
-                ctk.CTkLabel(
-                    products_frame,
-                    text="No products found",
-                    font=ctk.CTkFont(size=10),
-                    text_color=COLORS["text_secondary"]
-                ).pack(pady=10)
+                ctk.CTkLabel(products_frame, text="No products found", text_color=COLORS["text_secondary"]).pack(pady=10)
                 return
             
-            for product in filtered[:8]:
+            for product in filtered[:20]:
                 stock_color = COLORS["danger"] if product[4] < 10 else COLORS["text_primary"]
                 btn = ctk.CTkButton(
                     products_frame,
                     text=f"{product[1]} - Stock: {product[4]}",
-                    command=lambda p=product: select_product(p),
-                    height=28,
-                    font=ctk.CTkFont(size=10),
+                    command=lambda p=product: self.open_stock_modal(p, "remove", lambda: update_product_list()),
+                    height=40,
+                    font=ctk.CTkFont(size=15, weight="bold"),
                     fg_color="transparent",
                     text_color=stock_color,
                     hover_color=COLORS["primary"],
@@ -673,126 +570,108 @@ class InventoryPage:
                 )
                 btn.pack(fill="x", pady=1, padx=3)
         
-        def select_product(product):
-            selected_product[0] = product
-            stock_warning = " ⚠️ Low!" if product[4] < 10 else ""
-            selected_label.configure(text=f"✓ {product[1]} (Stock: {product[4]}){stock_warning}")
-            quantity_entry.focus()
-        
         search_var.trace("w", update_product_list)
         update_product_list()
+
+    def open_stock_modal(self, product, mode, on_success=None):
+        """Open modal for adding/removing stock"""
+        is_add = (mode == "add")
+        title_text = f"Stock In - {product[1]}" if is_add else f"Stock Out - {product[1]}"
+        color = COLORS["success"] if is_add else COLORS["danger"]
         
-        # Selected product - compact
-        selected_label = ctk.CTkLabel(
-            form_frame,
-            text="No product selected",
-            font=ctk.CTkFont(size=10),
-            text_color=COLORS["info"]
-        )
-        selected_label.pack(pady=(0, 8), padx=15, anchor="w")
+        modal = ctk.CTkToplevel(self.parent)
+        modal.title(title_text)
+        modal.geometry("400x450")
         
-        # Compact inputs in grid
-        inputs_frame = ctk.CTkFrame(form_frame, fg_color="transparent")
-        inputs_frame.pack(fill="x", padx=15, pady=(0, 8))
-        inputs_frame.grid_columnconfigure((0, 1), weight=1)
+        # Center modal
+        x = (modal.winfo_screenwidth() - 400) // 2
+        y = (modal.winfo_screenheight() - 450) // 2
+        modal.geometry(f"+{x}+{y}")
         
-        # Quantity
-        ctk.CTkLabel(
-            inputs_frame,
-            text="Quantity",
-            font=ctk.CTkFont(size=10, weight="bold"),
-            text_color=COLORS["text_primary"]
-        ).grid(row=0, column=0, sticky="w", pady=(0, 2))
+        modal.configure(fg_color=COLORS["dark"])
+        modal.transient(self.parent)
+        modal.grab_set()
         
-        quantity_entry = ctk.CTkEntry(
-            inputs_frame,
-            placeholder_text="0",
-            height=28,
-            font=ctk.CTkFont(size=11)
-        )
-        quantity_entry.grid(row=1, column=0, sticky="ew", padx=(0, 5))
+        # Fetch last restock info
+        last_restock_text = "No recent history"
+        adjustments = self.database.get_stock_adjustments(product[0], limit=5)
+        # Find last 'add' if mode is add, or just last
+        found_date = None
+        for adj in adjustments:
+            # adj[2] is type, adj[6] is date
+            if adj[2] == 'add': 
+                found_date = datetime.strptime(adj[6], "%Y-%m-%d %H:%M:%S")
+                break
         
-        # Reason
-        ctk.CTkLabel(
-            inputs_frame,
-            text="Reason",
-            font=ctk.CTkFont(size=10, weight="bold"),
-            text_color=COLORS["text_primary"]
-        ).grid(row=0, column=1, sticky="w", pady=(0, 2))
+        if found_date:
+            days = (datetime.now() - found_date).days
+            if days == 0:
+                last_restock_text = "Restocked today"
+            elif days == 1:
+                last_restock_text = "Restocked yesterday"
+            else:
+                last_restock_text = f"Last restocked {days} days ago"
         
-        reason_var = ctk.StringVar(value="Damage")
-        reason_dropdown = ctk.CTkComboBox(
-            inputs_frame,
-            values=["Damage", "Expired", "Theft", "Return to Supplier", "Adjustment", "Other"],
-            variable=reason_var,
-            height=28,
-            font=ctk.CTkFont(size=10),
-            dropdown_font=ctk.CTkFont(size=10)
-        )
-        reason_dropdown.grid(row=1, column=1, sticky="ew", padx=(5, 0))
+        # UI
+        ctk.CTkLabel(modal, text=product[1], font=ctk.CTkFont(size=20, weight="bold"), text_color=COLORS["text_primary"]).pack(pady=(30, 5))
+        ctk.CTkLabel(modal, text=f"Current Stock: {product[4]}", font=ctk.CTkFont(size=14), text_color=COLORS["text_secondary"]).pack(pady=(0, 5))
+        ctk.CTkLabel(modal, text=last_restock_text, font=ctk.CTkFont(size=12, slant="italic"), text_color=COLORS["info"]).pack(pady=(0, 20))
         
-        # Notes - compact
-        ctk.CTkLabel(
-            form_frame,
-            text="Notes (Optional)",
-            font=ctk.CTkFont(size=10, weight="bold"),
-            text_color=COLORS["text_primary"]
-        ).pack(pady=(5, 2), padx=15, anchor="w")
+        # Form
+        input_label = "ADD QTY:" if is_add else "REMOVE QTY:"
+        ctk.CTkLabel(modal, text=input_label, font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w", padx=40)
         
-        notes_entry = ctk.CTkEntry(
-            form_frame,
-            placeholder_text="Additional notes...",
-            height=28,
-            font=ctk.CTkFont(size=10)
-        )
-        notes_entry.pack(fill="x", padx=15, pady=(0, 12))
+        qty_entry = ctk.CTkEntry(modal, placeholder_text="0", height=35)
+        qty_entry.pack(fill="x", padx=40, pady=(5, 15))
+        qty_entry.focus()
         
-        # Compact submit button
-        def submit_stock_out():
-            if not selected_product[0]:
-                messagebox.showerror("Error", "Please select a product")
-                return
-            
+        ctk.CTkLabel(modal, text="REASON:", font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w", padx=40)
+        reasons = ["Purchase", "Return", "Adjustment", "Other"] if is_add else ["Damage", "Expired", "Theft", "Use", "Other"]
+        reason_var = ctk.StringVar(value=reasons[0])
+        reason_menu = ctk.CTkOptionMenu(modal, values=reasons, variable=reason_var, height=35, fg_color=COLORS["card_bg"], button_color=COLORS["primary"])
+        reason_menu.pack(fill="x", padx=40, pady=(5, 15))
+        
+        ctk.CTkLabel(modal, text="NOTES (OPTIONAL):", font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w", padx=40)
+        notes_entry = ctk.CTkEntry(modal, placeholder_text="Notes...", height=35)
+        notes_entry.pack(fill="x", padx=40, pady=(5, 20))
+        
+        def save(event=None):
             try:
-                quantity = int(quantity_entry.get())
-                if quantity <= 0:
-                    messagebox.showerror("Error", "Quantity must be greater than 0")
-                    return
-            except ValueError:
-                messagebox.showerror("Error", "Please enter a valid quantity")
+                qty = int(qty_entry.get())
+                if qty <= 0: raise ValueError
+            except:
+                messagebox.showerror("Error", "Invalid Quantity")
                 return
             
-            product = selected_product[0]
-            if quantity > product[4]:
-                messagebox.showerror("Error", f"Insufficient stock!\nAvailable: {product[4]}, Requested: {quantity}")
+            if not is_add and qty > product[4]:
+                messagebox.showerror("Error", "Insufficient Stock")
                 return
             
-            self.database.update_product_stock(product[0], -quantity)
+            change = qty if is_add else -qty
+            self.database.update_product_stock(product[0], change)
             
-            notes = notes_entry.get() or ""
-            details = f"Stock Out: {product[1]} -{quantity} ({reason_var.get()}) {notes}"
-            self.database.log_activity(self.user_data['id'], self.user_data['username'], "Stock Out", details)
+            # Log
+            act_type = "Stock In" if is_add else "Stock Out"
+            notes = notes_entry.get()
+            details = f"{act_type}: {product[1]} {change:+} ({reason_var.get()}) {notes}"
+            self.database.log_activity(self.user_data['id'], self.user_data['username'], act_type, details)
             
-            new_stock = product[4] - quantity
-            warning = "\n⚠️ Warning: Stock is now low!" if new_stock < 10 else ""
-            messagebox.showinfo("Success", f"Removed {quantity} units from {product[1]}\nNew stock: {new_stock}{warning}")
+            # Stock Adjustment Log
+            adj_type = "add" if is_add else "remove"
+            self.database.cursor.execute("""
+                INSERT INTO stock_adjustments (product_id, adjustment_type, quantity, reason, user_id)
+                VALUES (?, ?, ?, ?, ?)
+            """, (product[0], adj_type, qty, reason_var.get(), self.user_data['id']))
+            self.database.conn.commit()
             
-            selected_product[0] = None
-            selected_label.configure(text="No product selected")
-            quantity_entry.delete(0, "end")
-            notes_entry.delete(0, "end")
-            search_var.set("")
-            search_entry.focus()
-        
-        ctk.CTkButton(
-            form_frame,
-            text="✓ Remove Stock",
-            command=submit_stock_out,
-            height=35,
-            font=ctk.CTkFont(size=12, weight="bold"),
-            fg_color=COLORS["danger"],
-            hover_color="#c0392b"
-        ).pack(fill="x", padx=15, pady=(0, 15))
+            messagebox.showinfo("Success", "Stock Updated")
+            modal.destroy()
+            if on_success: on_success()
+            
+        qty_entry.bind("<Return>", save)
+        notes_entry.bind("<Return>", save)
+
+        ctk.CTkButton(modal, text="SAVE", height=40, font=ctk.CTkFont(weight="bold"), fg_color=color, hover_color=color, command=save).pack(fill="x", padx=40, pady=10)
     
     def show_suppliers(self):
         """Show suppliers management"""
@@ -949,3 +828,167 @@ class InventoryPage:
                 ctk.CTkLabel(row, text=str(p[4]), width=80, anchor="center", text_color=stock_color, font=ctk.CTkFont(weight="bold")).pack(side="left", padx=10)
                 
                 ctk.CTkLabel(row, text=f"{CURRENCY_SYMBOL}{p[3]:.2f}", width=80, anchor="e", text_color=COLORS["success"]).pack(side="right", padx=10)
+
+    def show_all_items_modal(self):
+        """Show modal with all items and stock levels"""
+        modal = ctk.CTkToplevel(self.parent)
+        modal.title("All Stock Items")
+        modal.geometry("700x600")
+        
+        # Center modal
+        x = (modal.winfo_screenwidth() - 700) // 2
+        y = (modal.winfo_screenheight() - 600) // 2
+        modal.geometry(f"+{x}+{y}")
+        
+        modal.configure(fg_color=COLORS["dark"])
+        modal.transient(self.parent)
+        modal.grab_set() # Modal behavior
+        
+        # Header
+        header = ctk.CTkFrame(modal, fg_color="transparent")
+        header.pack(fill="x", padx=20, pady=20)
+        
+        ctk.CTkLabel(
+            header, 
+            text="📦 All Stock Items", 
+            font=ctk.CTkFont(size=22, weight="bold"),
+            text_color=COLORS["text_primary"]
+        ).pack(side="left")
+
+        # Filter
+        self.filter_var = ctk.StringVar(value="A-Z")
+        filter_menu = ctk.CTkOptionMenu(
+            header,
+            values=["A-Z", "Recent Restocks", "Out of Stock"],
+            variable=self.filter_var,
+            width=140,
+            height=32,
+            fg_color=COLORS["card_bg"],
+            button_color=COLORS["primary"],
+            button_hover_color=COLORS["secondary"],
+            text_color=COLORS["text_primary"],
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        filter_menu.pack(side="right")
+        
+        # Search in modal
+        search_frame = ctk.CTkFrame(modal, fg_color="transparent")
+        search_frame.pack(fill="x", padx=20, pady=(0, 10))
+        
+        search_var = ctk.StringVar()
+        search_entry = ctk.CTkEntry(
+            search_frame,
+            placeholder_text="🔍 Search products...",
+            textvariable=search_var,
+            font=ctk.CTkFont(size=13),
+            height=35
+        )
+        search_entry.pack(fill="x")
+        
+        # List Header
+        list_header = ctk.CTkFrame(modal, fg_color=COLORS["card_bg"], height=40)
+        list_header.pack(fill="x", padx=20, pady=(10, 5))
+        list_header.pack_propagate(False)
+        
+        h_frame = ctk.CTkFrame(list_header, fg_color="transparent")
+        h_frame.pack(fill="both", expand=True, padx=10, pady=5)
+        
+        ctk.CTkLabel(h_frame, text="Product Name", font=ctk.CTkFont(weight="bold"), width=300, anchor="w").pack(side="left", padx=5)
+        ctk.CTkLabel(h_frame, text="Stock", font=ctk.CTkFont(weight="bold"), width=100, anchor="e").pack(side="right", padx=15)
+        
+        # Product List
+        list_frame = ctk.CTkScrollableFrame(modal, fg_color="transparent")
+        list_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        
+        all_products = self.database.get_all_products()
+        
+        # Helper to get restock dates (cache)
+        self._restock_map = None
+        
+        def get_restock_map():
+            if self._restock_map is None:
+                try:
+                    self.database.cursor.execute("SELECT product_id, MAX(created_at) FROM stock_adjustments GROUP BY product_id")
+                    self._restock_map = {r[0]: r[1] for r in self.database.cursor.fetchall()}
+                except:
+                    self._restock_map = {}
+            return self._restock_map
+
+        def render_list(*args):
+             for widget in list_frame.winfo_children():
+                 widget.destroy()
+             
+             term = search_var.get().lower()
+             filter_mode = self.filter_var.get()
+             
+             # Filter first
+             filtered = []
+             for p in all_products:
+                 # Check stock tracking indices: use_stock_tracking=12
+                 use_stock = p[12] if len(p) > 12 and p[12] is not None else 1
+                 if use_stock == 0:
+                     continue
+                 
+                 # Search filter
+                 if term and term not in p[1].lower():
+                     continue
+                
+                 # Out of Stock Filter
+                 if filter_mode == "Out of Stock" and p[4] > 0:
+                     continue
+                     
+                 filtered.append(p)
+             
+             # Apply Sort
+             if filter_mode == "A-Z":
+                 filtered.sort(key=lambda x: x[1].lower())
+             elif filter_mode == "Recent Restocks":
+                 rmap = get_restock_map()
+                 # Sort by restock date desc, fallback to created_at
+                 # p[7] is created_at, p[0] is id
+                 filtered.sort(key=lambda x: rmap.get(x[0], x[7]), reverse=True)
+             
+             if not filtered:
+                 ctk.CTkLabel(list_frame, text="No products found", text_color=COLORS["text_secondary"]).pack(pady=20)
+                 return
+
+             # Render first 50 items for performance
+             for p in filtered[:50]:
+                 row = ctk.CTkFrame(list_frame, fg_color="transparent", height=35)
+                 row.pack(fill="x", ipady=2)
+                 
+                 # Name
+                 ctk.CTkLabel(
+                     row, 
+                     text=p[1], 
+                     font=ctk.CTkFont(size=13),
+                     anchor="w"
+                 ).pack(side="left", padx=15)
+                 
+                 # Stock
+                 stock_val = p[4]
+                 color = COLORS["danger"] if stock_val < 10 else COLORS["success"]
+                 
+                 ctk.CTkLabel(
+                     row, 
+                     text=str(stock_val), 
+                     font=ctk.CTkFont(size=13, weight="bold"),
+                     text_color=color,
+                     width=80,
+                     anchor="e"
+                 ).pack(side="right", padx=15)
+                 
+                 # Separator
+                 ctk.CTkFrame(list_frame, fg_color=COLORS["dark"], height=1).pack(fill="x", padx=10)
+            
+             if len(filtered) > 50:
+                 ctk.CTkLabel(
+                     list_frame, 
+                     text=f"... and {len(filtered) - 50} more items. Search to find specific products.", 
+                     font=ctk.CTkFont(size=11, slant="italic"),
+                     text_color=COLORS["text_secondary"]
+                 ).pack(pady=10)
+ 
+        search_var.trace("w", render_list)
+        self.filter_var.trace("w", render_list)
+        render_list()
