@@ -533,15 +533,25 @@ class ProductsPage:
         self.load_products_for_category(category)
     
     def load_products_for_category(self, category):
-        """Load products for selected category"""
+        """Load products for selected category with lazy loading optimization"""
         from datetime import datetime, timedelta
         
         # Clear existing products
         for widget in self.products_display_frame.winfo_children():
             widget.destroy()
         
-        # Get products
-        all_products = self.database.get_all_products()
+        # Get products (cached if possible)
+        if not hasattr(self, '_products_cache') or not hasattr(self, '_cache_time'):
+            self._products_cache = self.database.get_all_products()
+            self._cache_time = datetime.now()
+        else:
+            # Refresh cache if older than 30 seconds
+            if (datetime.now() - self._cache_time).seconds > 30:
+                self._products_cache = self.database.get_all_products()
+                self._cache_time = datetime.now()
+        
+        all_products = self._products_cache
+        
         if category:
             products = [p for p in all_products if p[2] == category]
         else:
@@ -664,9 +674,69 @@ class ProductsPage:
             ).pack(pady=50)
             return
         
-        # Create product cards in grid
-        for idx, product in enumerate(products):
-            self.create_product_card(self.products_display_frame, product)
+        # OPTIMIZATION: Lazy loading with batch rendering
+        # Store all products but only render visible ones
+        self._all_filtered_products = products
+        self._rendered_count = 0
+        self._batch_size = 20  # Render 20 products at a time
+        
+        # Initial batch render
+        self._render_next_batch()
+        
+        # Add "Load More" button if there are more products
+        if len(products) > self._batch_size:
+            load_more_btn = ctk.CTkButton(
+                self.products_display_frame,
+                text=f"Load More ({len(products) - self._batch_size} remaining)",
+                command=self._render_next_batch,
+                height=40,
+                font=ctk.CTkFont(size=13, weight="bold"),
+                fg_color=COLORS["primary"],
+                hover_color=COLORS["secondary"]
+            )
+            load_more_btn.pack(pady=15, padx=20, fill="x")
+            self._load_more_btn = load_more_btn
+    
+    def _render_next_batch(self):
+        """Render the next batch of products"""
+        if not hasattr(self, '_all_filtered_products'):
+            return
+        
+        products = self._all_filtered_products
+        start_idx = self._rendered_count
+        end_idx = min(start_idx + self._batch_size, len(products))
+        
+        # Remove load more button if it exists
+        if hasattr(self, '_load_more_btn') and self._load_more_btn.winfo_exists():
+            self._load_more_btn.destroy()
+        
+        # Render batch
+        for i in range(start_idx, end_idx):
+            self.create_product_card(self.products_display_frame, products[i])
+        
+        self._rendered_count = end_idx
+        
+        # Re-add load more button if there are still more products
+        remaining = len(products) - self._rendered_count
+        if remaining > 0:
+            load_more_btn = ctk.CTkButton(
+                self.products_display_frame,
+                text=f"Load More ({remaining} remaining)",
+                command=self._render_next_batch,
+                height=40,
+                font=ctk.CTkFont(size=13, weight="bold"),
+                fg_color=COLORS["primary"],
+                hover_color=COLORS["secondary"]
+            )
+            load_more_btn.pack(pady=15, padx=20, fill="x")
+            self._load_more_btn = load_more_btn
+    
+    def _invalidate_cache(self):
+        """Invalidate the products cache to force refresh on next load"""
+        if hasattr(self, '_products_cache'):
+            delattr(self, '_products_cache')
+        if hasattr(self, '_cache_time'):
+            delattr(self, '_cache_time')
     
     def create_product_card(self, parent, product):
         """Create a simple list item (minimal styling for fast loading)"""

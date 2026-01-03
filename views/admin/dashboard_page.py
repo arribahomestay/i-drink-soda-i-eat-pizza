@@ -10,6 +10,9 @@ class DashboardPage:
     def __init__(self, parent, database):
         self.parent = parent
         self.database = database
+        self.current_filter = "today"  # today, yesterday, custom
+        self.custom_start_date = None
+        self.custom_end_date = None
         
     def format_date_mnl(self, date_str):
         """Convert UTC string to Manila Time (+8) string"""
@@ -35,20 +38,61 @@ class DashboardPage:
         )
         title.pack(side="left")
         
-        date_label = ctk.CTkLabel(
-            header,
-            text=datetime.now().strftime("%B %d, %Y"),
-            font=ctk.CTkFont(size=14),
-            text_color=COLORS["text_secondary"]
+        # Date filter buttons
+        filter_frame = ctk.CTkFrame(header, fg_color="transparent")
+        filter_frame.pack(side="right")
+        
+        # Today button
+        today_btn = ctk.CTkButton(
+            filter_frame,
+            text="Today",
+            command=lambda: self.apply_filter("today"),
+            width=100,
+            height=35,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            fg_color=COLORS["primary"] if self.current_filter == "today" else COLORS["card_bg"],
+            hover_color=COLORS["primary"],
+            corner_radius=8
         )
-        date_label.pack(side="right")
+        today_btn.pack(side="left", padx=5)
+        
+        # Yesterday button
+        yesterday_btn = ctk.CTkButton(
+            filter_frame,
+            text="Yesterday",
+            command=lambda: self.apply_filter("yesterday"),
+            width=100,
+            height=35,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            fg_color=COLORS["primary"] if self.current_filter == "yesterday" else COLORS["card_bg"],
+            hover_color=COLORS["primary"],
+            corner_radius=8
+        )
+        yesterday_btn.pack(side="left", padx=5)
+        
+        # Custom date button
+        custom_btn = ctk.CTkButton(
+            filter_frame,
+            text="Custom Date",
+            command=lambda: self.show_custom_date_dialog(),
+            width=120,
+            height=35,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            fg_color=COLORS["primary"] if self.current_filter == "custom" else COLORS["card_bg"],
+            hover_color=COLORS["primary"],
+            corner_radius=8
+        )
+        custom_btn.pack(side="left", padx=5)
         
         # Stats cards
         stats_frame = ctk.CTkFrame(self.parent, fg_color="transparent")
         stats_frame.pack(fill="x", padx=30, pady=(0, 20))
         
-        # Get statistics
-        sales_summary = self.database.get_sales_summary()
+        # Get date range based on filter
+        start_date, end_date = self.get_date_range()
+        
+        # Get statistics with date filter
+        sales_summary = self.database.get_sales_summary(start_date, end_date)
         products = self.database.get_all_products()
         
         # Split Product Counts
@@ -58,7 +102,7 @@ class DashboardPage:
         low_stock = len([p for p in stock_products if p[4] < 10])
         
         # Split Sales Counts
-        sales_breakdown = self.database.get_product_type_sales_count()
+        sales_breakdown = self.database.get_product_type_sales_count(start_date, end_date)
         sold_stock = 0
         sold_avail = 0
         if sales_breakdown:
@@ -104,119 +148,238 @@ class DashboardPage:
                 text_color=color
             ).pack(pady=(0, 20), padx=20)
         
-        # Recent transactions - Compact List Format
-        recent_frame = ctk.CTkFrame(self.parent, fg_color=COLORS["card_bg"], corner_radius=15)
-        recent_frame.pack(fill="both", expand=True, padx=30, pady=(0, 30))
         
-        recent_header = ctk.CTkLabel(
-            recent_frame,
-            text="Recent Sales",
-            font=ctk.CTkFont(size=16, weight="bold"),
+        # Analytics Section - Clean 3-Column Grid Layout
+        analytics_container = ctk.CTkFrame(self.parent, fg_color="transparent")
+        analytics_container.pack(fill="both", expand=True, padx=30, pady=(0, 30))
+        
+        # Configure grid weights for equal columns
+        analytics_container.grid_columnconfigure(0, weight=1)
+        analytics_container.grid_columnconfigure(1, weight=1)
+        analytics_container.grid_columnconfigure(2, weight=1)
+        analytics_container.grid_rowconfigure(0, weight=1)
+        analytics_container.grid_rowconfigure(1, weight=1)
+        
+        # === ROW 1 ===
+        
+        # 1. Top Selling Products (Row 1, Col 1)
+        top_products_frame = ctk.CTkFrame(analytics_container, fg_color=COLORS["card_bg"], corner_radius=15)
+        top_products_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 10), pady=(0, 10))
+        
+        ctk.CTkLabel(
+            top_products_frame,
+            text="📊 Top Selling Products",
+            font=ctk.CTkFont(size=14, weight="bold"),
             text_color=COLORS["text_primary"]
-        )
-        recent_header.pack(pady=(15, 10), padx=20, anchor="w")
+        ).pack(pady=(12, 8), padx=15, anchor="w")
         
-        # Sales items list container - more compact
-        sales_list = ctk.CTkScrollableFrame(
-            recent_frame,
+        top_products_list = ctk.CTkScrollableFrame(
+            top_products_frame,
             fg_color="transparent",
-            scrollbar_button_color=COLORS["primary"]
+            scrollbar_button_color=COLORS["primary"],
+            height=150
         )
-        sales_list.pack(fill="both", expand=True, padx=15, pady=(0, 15))
+        top_products_list.pack(fill="both", expand=True, padx=12, pady=(0, 12))
         
-        # Get recent transaction items (last 20 items sold)
-        transactions = self.database.get_transactions(20)
+        top_products = self.database.get_top_selling_products(start_date, end_date, limit=5)
         
-        if transactions:
-            item_count = 0
-            for txn in transactions:
-                items = self.database.get_transaction_items(txn[0])
+        if top_products:
+            for idx, product in enumerate(top_products, 1):
+                product_name = product[0]
+                qty_sold = product[1]
+                revenue = product[2]
                 
-                for item in items:
-                    if item_count >= 20:  # Limit to 20 items
-                        break
-                    
-                    # transaction_items: id, txn_id, prod_id, product_name, quantity, unit_price, subtotal, variant_id, variant_name, modifiers
-                    product_name = item[3]
-                    qty = item[4]
-                    unit_price = item[5]
-                    subtotal = item[6]
-                    product_id = item[2]
-                    modifiers_str = item[9] if len(item) > 9 else None
-                    
-                    # Create compact clickable item row
-                    item_card = ctk.CTkFrame(sales_list, fg_color=COLORS["dark"], corner_radius=5, height=30, cursor="hand2")
-                    item_card.pack(fill="x", pady=2)
-                    item_card.pack_propagate(False)
-                    
-                     # Make entire card clickable
-                    def make_clickable(card, pname, pid, q, price, sub, mods, o_type):
-                        def on_click(event=None):
-                            self.show_item_breakdown(pname, pid, q, price, sub, mods, o_type)
-                        card.bind("<Button-1>", on_click)
-                        card.bind("<Enter>", lambda e: card.configure(fg_color=COLORS["primary"]))
-                        card.bind("<Leave>", lambda e: card.configure(fg_color=COLORS["dark"]))
-                        return on_click
-                    
-                    # Order Type
-                    order_type = txn[7] if len(txn) > 7 else "Normal"
-                    if order_type is None: order_type = "Normal"
-
-                    click_handler = make_clickable(item_card, product_name, product_id, qty, unit_price, subtotal, modifiers_str, order_type)
-                    
-                    # Content frame - compact
-                    content_frame = ctk.CTkFrame(item_card, fg_color="transparent")
-                    content_frame.pack(fill="both", expand=True, padx=12, pady=5)
-                    content_frame.bind("<Button-1>", click_handler)
-                    
-                    # Left side: Sold text - smaller font
-                    sold_label = ctk.CTkLabel(
-                        content_frame,
-                        text=f"Sold {qty}x {product_name}",
-                        font=ctk.CTkFont(size=11),
-                        text_color=COLORS["text_primary"],
-                        anchor="w"
-                    )
-                    sold_label.pack(side="left", fill="x", expand=True)
-                    sold_label.bind("<Button-1>", click_handler)
-                    
-                    # Order type badge - compact
-                    type_color = COLORS["info"] if order_type == "Dine In" else (COLORS["warning"] if order_type == "Take Out" else COLORS["text_secondary"])
-                    
-                    type_label = ctk.CTkLabel(
-                        content_frame,
-                        text=order_type,
-                        font=ctk.CTkFont(size=9, weight="bold"),
-                        text_color=type_color
-                    )
-                    type_label.pack(side="right", padx=(8, 0))
-                    type_label.bind("<Button-1>", click_handler)
-                    
-                    # Right side: Price - smaller font
-                    price_label = ctk.CTkLabel(
-                        content_frame,
-                        text=f"{CURRENCY_SYMBOL}{subtotal:.2f}",
-                        font=ctk.CTkFont(size=11, weight="bold"),
-                        text_color=COLORS["success"]
-                    )
-                    price_label.pack(side="right", padx=(8, 0))
-                    price_label.bind("<Button-1>", click_handler)
-                    
-                    item_count += 1
+                row = ctk.CTkFrame(top_products_list, fg_color=COLORS["dark"], corner_radius=4, height=32)
+                row.pack(fill="x", pady=1)
+                row.pack_propagate(False)
                 
-                if item_count >= 20:
-                    break
+                content = ctk.CTkFrame(row, fg_color="transparent")
+                content.pack(fill="both", expand=True, padx=10, pady=4)
+                
+                rank_color = COLORS["warning"] if idx <= 3 else COLORS["text_secondary"]
+                ctk.CTkLabel(content, text=f"#{idx}", font=ctk.CTkFont(size=9, weight="bold"), text_color=rank_color, width=25).pack(side="left")
+                ctk.CTkLabel(content, text=product_name[:20], font=ctk.CTkFont(size=10), text_color=COLORS["text_primary"], anchor="w").pack(side="left", fill="x", expand=True, padx=(3, 5))
+                ctk.CTkLabel(content, text=f"{qty_sold}", font=ctk.CTkFont(size=9), text_color=COLORS["info"], width=35, anchor="e").pack(side="right")
         else:
-            ctk.CTkLabel(
-                sales_list,
-                text="No sales yet",
-                font=ctk.CTkFont(size=13),
-                text_color=COLORS["text_secondary"]
-            ).pack(pady=30)
+            ctk.CTkLabel(top_products_list, text="No data", font=ctk.CTkFont(size=11), text_color=COLORS["text_secondary"]).pack(pady=20)
+        
+        # 2. Payment Methods (Row 1, Col 2)
+        payment_frame = ctk.CTkFrame(analytics_container, fg_color=COLORS["card_bg"], corner_radius=15)
+        payment_frame.grid(row=0, column=1, sticky="nsew", padx=5, pady=(0, 10))
+        
+        ctk.CTkLabel(
+            payment_frame,
+            text="💳 Payment Methods",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=COLORS["text_primary"]
+        ).pack(pady=(12, 8), padx=15, anchor="w")
+        
+        payment_list = ctk.CTkFrame(payment_frame, fg_color="transparent")
+        payment_list.pack(fill="both", expand=True, padx=15, pady=(0, 12))
+        
+        payment_methods = self.database.get_payment_method_breakdown(start_date, end_date)
+        
+        if payment_methods:
+            total_amount = sum(pm[1] for pm in payment_methods)
+            
+            for pm in payment_methods:
+                method = pm[0]
+                amount = pm[1]
+                count = pm[2]
+                percentage = (amount / total_amount * 100) if total_amount > 0 else 0
+                
+                method_row = ctk.CTkFrame(payment_list, fg_color=COLORS["dark"], corner_radius=4, height=38)
+                method_row.pack(fill="x", pady=2)
+                method_row.pack_propagate(False)
+                
+                row_content = ctk.CTkFrame(method_row, fg_color="transparent")
+                row_content.pack(fill="both", expand=True, padx=10, pady=4)
+                
+                method_icon = "💵" if method == "Cash" else "💳"
+                ctk.CTkLabel(row_content, text=f"{method_icon} {method}", font=ctk.CTkFont(size=11, weight="bold"), text_color=COLORS["text_primary"], anchor="w").pack(side="left", fill="x", expand=True)
+                ctk.CTkLabel(row_content, text=f"{percentage:.0f}%", font=ctk.CTkFont(size=10, weight="bold"), text_color=COLORS["info"], width=40).pack(side="right", padx=(3, 0))
+                ctk.CTkLabel(row_content, text=f"{CURRENCY_SYMBOL}{amount:.0f}", font=ctk.CTkFont(size=11, weight="bold"), text_color=COLORS["success"], width=75, anchor="e").pack(side="right")
+        else:
+            ctk.CTkLabel(payment_list, text="No data", font=ctk.CTkFont(size=11), text_color=COLORS["text_secondary"]).pack(pady=20)
+        
+        # 3. Order Types (Row 1, Col 3)
+        order_type_frame = ctk.CTkFrame(analytics_container, fg_color=COLORS["card_bg"], corner_radius=15)
+        order_type_frame.grid(row=0, column=2, sticky="nsew", padx=(10, 0), pady=(0, 10))
+        
+        ctk.CTkLabel(
+            order_type_frame,
+            text="🍽️ Order Types",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=COLORS["text_primary"]
+        ).pack(pady=(12, 8), padx=15, anchor="w")
+        
+        order_type_list = ctk.CTkFrame(order_type_frame, fg_color="transparent")
+        order_type_list.pack(fill="both", expand=True, padx=15, pady=(0, 12))
+        
+        order_types = self.database.get_order_type_breakdown(start_date, end_date)
+        
+        if order_types:
+            total_orders = sum(ot[1] for ot in order_types)
+            
+            for ot in order_types:
+                order_type = ot[0]
+                count = ot[1]
+                amount = ot[2]
+                percentage = (count / total_orders * 100) if total_orders > 0 else 0
+                
+                if order_type == "Dine In":
+                    type_color = COLORS["info"]
+                    icon = "🍽️"
+                elif order_type == "Take Out":
+                    type_color = COLORS["warning"]
+                    icon = "🥡"
+                else:
+                    type_color = COLORS["primary"]
+                    icon = "🛒"
+                
+                type_row = ctk.CTkFrame(order_type_list, fg_color=COLORS["dark"], corner_radius=4, height=38)
+                type_row.pack(fill="x", pady=2)
+                type_row.pack_propagate(False)
+                
+                row_content = ctk.CTkFrame(type_row, fg_color="transparent")
+                row_content.pack(fill="both", expand=True, padx=10, pady=4)
+                
+                ctk.CTkLabel(row_content, text=f"{icon} {order_type}", font=ctk.CTkFont(size=11, weight="bold"), text_color=type_color, anchor="w").pack(side="left", fill="x", expand=True)
+                ctk.CTkLabel(row_content, text=f"{percentage:.0f}%", font=ctk.CTkFont(size=10, weight="bold"), text_color=type_color, width=40).pack(side="right", padx=(3, 0))
+                ctk.CTkLabel(row_content, text=f"{CURRENCY_SYMBOL}{amount:.0f}", font=ctk.CTkFont(size=11, weight="bold"), text_color=COLORS["success"], width=75, anchor="e").pack(side="right")
+        else:
+            ctk.CTkLabel(order_type_list, text="No data", font=ctk.CTkFont(size=11), text_color=COLORS["text_secondary"]).pack(pady=20)
+        
+        # === ROW 2 ===
+        
+        # 4. Peak Hours (Row 2, Col 1-2)
+        peak_hours_frame = ctk.CTkFrame(analytics_container, fg_color=COLORS["card_bg"], corner_radius=15)
+        peak_hours_frame.grid(row=1, column=0, columnspan=2, sticky="nsew", padx=(0, 5), pady=(0, 0))
+        
+        ctk.CTkLabel(
+            peak_hours_frame,
+            text="⏰ Peak Sales Hours",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=COLORS["text_primary"]
+        ).pack(pady=(12, 8), padx=15, anchor="w")
+        
+        peak_hours_content = ctk.CTkFrame(peak_hours_frame, fg_color="transparent")
+        peak_hours_content.pack(fill="both", expand=True, padx=15, pady=(0, 12))
+        
+        hourly_sales = self.database.get_hourly_sales(start_date, end_date)
+        
+        if hourly_sales:
+            # Create horizontal bar chart
+            max_sales = max(hs[1] for hs in hourly_sales) if hourly_sales else 1
+            
+            for hour_data in hourly_sales[:8]:  # Show top 8 hours
+                hour = hour_data[0]
+                sales = hour_data[1]
+                count = hour_data[2]
+                bar_width = (sales / max_sales * 100) if max_sales > 0 else 0
+                
+                hour_row = ctk.CTkFrame(peak_hours_content, fg_color="transparent", height=28)
+                hour_row.pack(fill="x", pady=2)
+                hour_row.pack_propagate(False)
+                
+                # Time label
+                time_label = ctk.CTkLabel(hour_row, text=f"{hour:02d}:00", font=ctk.CTkFont(size=10, weight="bold"), text_color=COLORS["text_secondary"], width=50, anchor="w")
+                time_label.pack(side="left", padx=(0, 8))
+                
+                # Bar container
+                bar_container = ctk.CTkFrame(hour_row, fg_color=COLORS["dark"], corner_radius=3, height=20)
+                bar_container.pack(side="left", fill="x", expand=True, padx=(0, 8))
+                
+                # Filled bar
+                if bar_width > 0:
+                    bar = ctk.CTkFrame(bar_container, fg_color=COLORS["primary"], corner_radius=3, width=int(bar_width * 3), height=20)
+                    bar.place(x=0, y=0)
+                
+                # Sales amount
+                ctk.CTkLabel(hour_row, text=f"{CURRENCY_SYMBOL}{sales:.0f}", font=ctk.CTkFont(size=10, weight="bold"), text_color=COLORS["success"], width=70, anchor="e").pack(side="right")
+        else:
+            ctk.CTkLabel(peak_hours_content, text="No hourly data", font=ctk.CTkFont(size=11), text_color=COLORS["text_secondary"]).pack(pady=20)
+        
+        # 5. Category Performance (Row 2, Col 3)
+        category_frame = ctk.CTkFrame(analytics_container, fg_color=COLORS["card_bg"], corner_radius=15)
+        category_frame.grid(row=1, column=2, sticky="nsew", padx=(5, 0), pady=(0, 0))
+        
+        ctk.CTkLabel(
+            category_frame,
+            text="📂 Top Categories",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=COLORS["text_primary"]
+        ).pack(pady=(12, 8), padx=15, anchor="w")
+        
+        category_list = ctk.CTkFrame(category_frame, fg_color="transparent")
+        category_list.pack(fill="both", expand=True, padx=15, pady=(0, 12))
+        
+        categories = self.database.get_category_performance(start_date, end_date)
+        
+        if categories:
+            total_cat_sales = sum(cat[1] for cat in categories)
+            
+            for idx, cat in enumerate(categories[:5], 1):  # Top 5 categories
+                category_name = cat[0] or "Uncategorized"
+                sales = cat[1]
+                percentage = (sales / total_cat_sales * 100) if total_cat_sales > 0 else 0
+                
+                cat_row = ctk.CTkFrame(category_list, fg_color=COLORS["dark"], corner_radius=4, height=35)
+                cat_row.pack(fill="x", pady=2)
+                cat_row.pack_propagate(False)
+                
+                row_content = ctk.CTkFrame(cat_row, fg_color="transparent")
+                row_content.pack(fill="both", expand=True, padx=10, pady=4)
+                
+                ctk.CTkLabel(row_content, text=category_name[:15], font=ctk.CTkFont(size=10), text_color=COLORS["text_primary"], anchor="w").pack(side="left", fill="x", expand=True)
+                ctk.CTkLabel(row_content, text=f"{percentage:.0f}%", font=ctk.CTkFont(size=9, weight="bold"), text_color=COLORS["info"], width=35).pack(side="right", padx=(3, 0))
+                ctk.CTkLabel(row_content, text=f"{CURRENCY_SYMBOL}{sales:.0f}", font=ctk.CTkFont(size=10, weight="bold"), text_color=COLORS["success"], width=65, anchor="e").pack(side="right")
+        else:
+            ctk.CTkLabel(category_list, text="No data", font=ctk.CTkFont(size=11), text_color=COLORS["text_secondary"]).pack(pady=20)
 
 
 
-    def show_item_breakdown(self, product_name, product_id, quantity, unit_price, subtotal, modifiers_str, order_type="Normal"):
+    def show_item_breakdown(self, product_name, product_id, quantity, unit_price, subtotal, modifiers_str, order_type="Regular"):
         """Show detailed breakdown modal for a sold item with ingredients, add-ons, and prices"""
         import json
         
@@ -508,3 +671,169 @@ class DashboardPage:
         ).pack(pady=15)
         
         ctk.CTkButton(dialog, text="Close", command=dialog.destroy, fg_color=COLORS["danger"], width=100).pack(pady=10, side="bottom")
+    
+    def get_date_range(self):
+        """Get date range based on current filter"""
+        from datetime import date, timedelta
+        
+        if self.current_filter == "today":
+            today = date.today()
+            return today.strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d")
+        elif self.current_filter == "yesterday":
+            yesterday = date.today() - timedelta(days=1)
+            return yesterday.strftime("%Y-%m-%d"), yesterday.strftime("%Y-%m-%d")
+        elif self.current_filter == "custom" and self.custom_start_date and self.custom_end_date:
+            return self.custom_start_date, self.custom_end_date
+        else:
+            # Default to today
+            today = date.today()
+            return today.strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d")
+    
+    def apply_filter(self, filter_type):
+        """Apply date filter and refresh dashboard"""
+        self.current_filter = filter_type
+        # Clear and reload the dashboard
+        for widget in self.parent.winfo_children():
+            widget.destroy()
+        self.show()
+    
+    def show_custom_date_dialog(self):
+        """Show dialog to select custom date range"""
+        from tkcalendar import DateEntry
+        from datetime import date
+        
+        # Modal
+        dialog = ctk.CTkToplevel(self.parent)
+        dialog.title("Select Date Range")
+        dialog.geometry("450x380")
+        dialog.configure(fg_color=COLORS["dark"])
+        dialog.transient(self.parent)
+        dialog.grab_set()
+        
+        # Center
+        x = (dialog.winfo_screenwidth() - 450) // 2
+        y = (dialog.winfo_screenheight() - 380) // 2
+        dialog.geometry(f"+{x}+{y}")
+        
+        # Header
+        header = ctk.CTkLabel(
+            dialog,
+            text="Select Date Range",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=COLORS["text_primary"]
+        )
+        header.pack(pady=(20, 30))
+        
+        # Date inputs frame
+        dates_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        dates_frame.pack(pady=10, padx=30, fill="x")
+        
+        # Start date
+        start_label = ctk.CTkLabel(
+            dates_frame,
+            text="Start Date:",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color=COLORS["text_secondary"]
+        )
+        start_label.grid(row=0, column=0, sticky="w", pady=10, padx=(0, 15))
+        
+        # Calendar widget for start date
+        start_cal = DateEntry(
+            dates_frame,
+            width=20,
+            background=COLORS["primary"],
+            foreground='white',
+            borderwidth=2,
+            date_pattern='yyyy-mm-dd',
+            font=("Arial", 11)
+        )
+        start_cal.grid(row=0, column=1, pady=10, sticky="ew")
+        
+        # End date
+        end_label = ctk.CTkLabel(
+            dates_frame,
+            text="End Date:",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color=COLORS["text_secondary"]
+        )
+        end_label.grid(row=1, column=0, sticky="w", pady=10, padx=(0, 15))
+        
+        # Calendar widget for end date
+        end_cal = DateEntry(
+            dates_frame,
+            width=20,
+            background=COLORS["primary"],
+            foreground='white',
+            borderwidth=2,
+            date_pattern='yyyy-mm-dd',
+            font=("Arial", 11)
+        )
+        end_cal.grid(row=1, column=1, pady=10, sticky="ew")
+        
+        # Configure grid column to expand
+        dates_frame.columnconfigure(1, weight=1)
+        
+        # Pre-fill with current custom dates if available
+        if self.custom_start_date:
+            try:
+                start_cal.set_date(self.custom_start_date)
+            except:
+                pass
+        if self.custom_end_date:
+            try:
+                end_cal.set_date(self.custom_end_date)
+            except:
+                pass
+        
+        # Info label
+        info_label = ctk.CTkLabel(
+            dialog,
+            text="💡 Click on the date fields to open the calendar",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["text_secondary"]
+        )
+        info_label.pack(pady=(10, 20))
+        
+        # Buttons
+        def apply_custom_filter():
+            start = start_cal.get_date().strftime("%Y-%m-%d")
+            end = end_cal.get_date().strftime("%Y-%m-%d")
+            
+            self.custom_start_date = start
+            self.custom_end_date = end
+            self.current_filter = "custom"
+            dialog.destroy()
+            
+            # Refresh dashboard
+            for widget in self.parent.winfo_children():
+                widget.destroy()
+            self.show()
+        
+        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_frame.pack(pady=(15, 25))
+        
+        apply_btn = ctk.CTkButton(
+            btn_frame,
+            text="Apply Filter",
+            command=apply_custom_filter,
+            width=140,
+            height=40,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            fg_color=COLORS["success"],
+            hover_color="#27ae60"
+        )
+        apply_btn.pack(side="left", padx=5)
+        
+        cancel_btn = ctk.CTkButton(
+            btn_frame,
+            text="Cancel",
+            command=dialog.destroy,
+            width=140,
+            height=40,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            fg_color=COLORS["danger"],
+            hover_color="#c0392b"
+        )
+        cancel_btn.pack(side="left", padx=5)
+
+

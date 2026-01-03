@@ -239,63 +239,48 @@ class SettingsPage:
         self.load_activity_logs(logs_list_frame)
     
     def load_activity_logs(self, logs_list_frame):
-        """Load and display activity logs in simple list format"""
+        """Load and display activity logs with lazy loading optimization"""
+        from datetime import datetime
+        
         # Clear existing
         for widget in logs_list_frame.winfo_children():
             widget.destroy()
         
-        logs = self.database.get_activity_logs(limit=100)
+        # Get logs with caching
+        if not hasattr(self, '_settings_logs_cache') or not hasattr(self, '_settings_logs_cache_time'):
+            self._settings_logs_cache = self.database.get_activity_logs(limit=200)
+            self._settings_logs_cache_time = datetime.now()
+        else:
+            # Refresh cache if older than 30 seconds
+            if (datetime.now() - self._settings_logs_cache_time).seconds > 30:
+                self._settings_logs_cache = self.database.get_activity_logs(limit=200)
+                self._settings_logs_cache_time = datetime.now()
+        
+        logs = self._settings_logs_cache
         
         if logs:
-            for idx, log in enumerate(logs):
-                # log: 0:id, 1:user_id, 2:username, 3:action, 4:details, 5:created_at
-                
-                # Alternating row colors
-                row_color = COLORS["dark"] if idx % 2 == 0 else "transparent"
-                
-                row = ctk.CTkFrame(logs_list_frame, fg_color=row_color, height=30)
-                row.pack(fill="x", pady=1)
-                row.pack_propagate(False)
-                
-                # Action
-                ctk.CTkLabel(
-                    row,
-                    text=log[3],
-                    font=ctk.CTkFont(size=11),
-                    text_color=COLORS["primary"],
-                    width=150,
-                    anchor="w"
-                ).pack(side="left", padx=(15, 10))
-                
-                # User
-                ctk.CTkLabel(
-                    row,
-                    text=log[2],
-                    font=ctk.CTkFont(size=11),
-                    text_color=COLORS["text_secondary"],
-                    width=100,
-                    anchor="w"
-                ).pack(side="left", padx=10)
-                
-                # Details
-                details_text = (log[4] or "")[:80] + "..." if log[4] and len(log[4]) > 80 else (log[4] or "")
-                ctk.CTkLabel(
-                    row,
-                    text=details_text,
-                    font=ctk.CTkFont(size=10),
-                    text_color=COLORS["text_secondary"],
-                    anchor="w"
-                ).pack(side="left", fill="x", expand=True, padx=10)
-                
-                # Time
-                ctk.CTkLabel(
-                    row,
-                    text=(log[5] or "")[:16],
-                    font=ctk.CTkFont(size=10),
-                    text_color=COLORS["text_secondary"],
-                    width=130,
-                    anchor="e"
-                ).pack(side="right", padx=(10, 15))
+            # Store reference to frame for batch rendering
+            self._settings_logs_frame = logs_list_frame
+            self._all_settings_logs = logs
+            self._settings_logs_rendered = 0
+            self._settings_logs_batch = 20
+            
+            # Initial batch render
+            self._render_settings_logs_batch()
+            
+            # Add "Load More" button if there are more logs
+            if len(logs) > self._settings_logs_batch:
+                load_more_btn = ctk.CTkButton(
+                    logs_list_frame,
+                    text=f"Load More ({len(logs) - self._settings_logs_batch} remaining)",
+                    command=self._render_settings_logs_batch,
+                    height=35,
+                    font=ctk.CTkFont(size=12, weight="bold"),
+                    fg_color=COLORS["primary"],
+                    hover_color=COLORS["secondary"]
+                )
+                load_more_btn.pack(pady=10, padx=20, fill="x")
+                self._settings_logs_load_more = load_more_btn
         else:
             ctk.CTkLabel(
                 logs_list_frame,
@@ -303,8 +288,95 @@ class SettingsPage:
                 text_color=COLORS["text_secondary"]
             ).pack(pady=20)
     
+    def _render_settings_logs_batch(self):
+        """Render the next batch of activity logs"""
+        if not hasattr(self, '_all_settings_logs'):
+            return
+        
+        logs = self._all_settings_logs
+        start_idx = self._settings_logs_rendered
+        end_idx = min(start_idx + self._settings_logs_batch, len(logs))
+        
+        # Remove load more button if it exists
+        if hasattr(self, '_settings_logs_load_more') and self._settings_logs_load_more.winfo_exists():
+            self._settings_logs_load_more.destroy()
+        
+        # Render batch
+        for idx in range(start_idx, end_idx):
+            log = logs[idx]
+            # log: 0:id, 1:user_id, 2:username, 3:action, 4:details, 5:created_at
+            
+            # Alternating row colors
+            row_color = COLORS["dark"] if idx % 2 == 0 else "transparent"
+            
+            row = ctk.CTkFrame(self._settings_logs_frame, fg_color=row_color, height=30)
+            row.pack(fill="x", pady=1)
+            row.pack_propagate(False)
+            
+            # Action
+            ctk.CTkLabel(
+                row,
+                text=log[3],
+                font=ctk.CTkFont(size=11),
+                text_color=COLORS["primary"],
+                width=150,
+                anchor="w"
+            ).pack(side="left", padx=(15, 10))
+            
+            # User
+            ctk.CTkLabel(
+                row,
+                text=log[2],
+                font=ctk.CTkFont(size=11),
+                text_color=COLORS["text_secondary"],
+                width=100,
+                anchor="w"
+            ).pack(side="left", padx=10)
+            
+            # Details
+            details_text = (log[4] or "")[:80] + "..." if log[4] and len(log[4]) > 80 else (log[4] or "")
+            ctk.CTkLabel(
+                row,
+                text=details_text,
+                font=ctk.CTkFont(size=10),
+                text_color=COLORS["text_secondary"],
+                anchor="w"
+            ).pack(side="left", fill="x", expand=True, padx=10)
+            
+            # Time
+            ctk.CTkLabel(
+                row,
+                text=(log[5] or "")[:16],
+                font=ctk.CTkFont(size=10),
+                text_color=COLORS["text_secondary"],
+                width=130,
+                anchor="e"
+            ).pack(side="right", padx=(10, 15))
+        
+        self._settings_logs_rendered = end_idx
+        
+        # Re-add load more button if there are still more logs
+        remaining = len(logs) - self._settings_logs_rendered
+        if remaining > 0:
+            load_more_btn = ctk.CTkButton(
+                self._settings_logs_frame,
+                text=f"Load More ({remaining} remaining)",
+                command=self._render_settings_logs_batch,
+                height=35,
+                font=ctk.CTkFont(size=12, weight="bold"),
+                fg_color=COLORS["primary"],
+                hover_color=COLORS["secondary"]
+            )
+            load_more_btn.pack(pady=10, padx=20, fill="x")
+            self._settings_logs_load_more = load_more_btn
+    
     def refresh_logs(self, logs_list_frame):
         """Refresh the activity logs"""
+        # Invalidate cache to force fresh data
+        if hasattr(self, '_settings_logs_cache'):
+            delattr(self, '_settings_logs_cache')
+        if hasattr(self, '_settings_logs_cache_time'):
+            delattr(self, '_settings_logs_cache_time')
         self.load_activity_logs(logs_list_frame)
     
     def setup_receipt_tab(self, parent_frame):
@@ -561,7 +633,7 @@ class SettingsPage:
         content = ctk.CTkFrame(container, fg_color="transparent")
         content.pack(fill="both", expand=True, padx=30)
         
-        # Optimization Box
+        # --- Optimization Box ---
         opt_frame = ctk.CTkFrame(content, fg_color=COLORS.get("dark", "#2C3E50"), corner_radius=10)
         opt_frame.pack(fill="x", pady=10)
         
@@ -593,6 +665,73 @@ class SettingsPage:
             command=run_opt,
             height=40,
             fg_color=COLORS["primary"],
+            font=ctk.CTkFont(weight="bold")
+        ).pack(padx=20, pady=(0, 20), anchor="w")
+        
+        # --- Backup Box ---
+        backup_frame = ctk.CTkFrame(content, fg_color=COLORS.get("dark", "#2C3E50"), corner_radius=10)
+        backup_frame.pack(fill="x", pady=10)
+        
+        ctk.CTkLabel(
+             backup_frame, 
+             text="Database Backup", 
+             font=ctk.CTkFont(size=16, weight="bold")
+        ).pack(anchor="w", padx=20, pady=(15, 5))
+        
+        ctk.CTkLabel(
+             backup_frame, 
+             text="Create a secure copy of your database to prevent data loss.", 
+             text_color=COLORS["text_secondary"]
+        ).pack(anchor="w", padx=20, pady=(0, 15))
+
+        def run_backup():
+             try:
+                 import shutil
+                 import os
+                 from datetime import datetime
+                 
+                 # Robust DB Path Finding
+                 source = "pos.db"
+                 
+                 # 1. Check CWD
+                 if not os.path.exists(source):
+                     # 2. Check directory of the running script (sys.argv[0])
+                     import sys
+                     main_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+                     source = os.path.join(main_dir, "pos.db")
+                     
+                 # 3. Check relative to this file (views/admin/settings_page.py -> Root)
+                 if not os.path.exists(source):
+                      current_file = os.path.abspath(__file__)
+                      # go up 3 levels: views/admin/ -> views/ -> POINTOFSALE/
+                      project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
+                      source = os.path.join(project_root, "pos.db")
+
+                 if not os.path.exists(source):
+                     messagebox.showerror("Error", f"Database file 'pos.db' not found in:\n{os.getcwd()}\nor {main_dir}\nor {project_root}")
+                     return
+
+                 # Create backups folder in the same dir as the DB
+                 db_dir = os.path.dirname(os.path.abspath(source))
+                 backup_dir = os.path.join(db_dir, "backups")
+                 if not os.path.exists(backup_dir):
+                     os.makedirs(backup_dir)
+                     
+                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                 destination = os.path.join(backup_dir, f"pos_backup_{timestamp}.db")
+                 
+                 shutil.copy2(source, destination)
+                 
+                 messagebox.showinfo("Backup Complete", f"Database successfully backed up to:\n{destination}")
+             except Exception as e:
+                 messagebox.showerror("Error", f"Backup failed: {e}")
+        
+        ctk.CTkButton(
+            backup_frame, 
+            text="💾 Backup Database Now", 
+            command=run_backup,
+            height=40,
+            fg_color=COLORS["success"],
             font=ctk.CTkFont(weight="bold")
         ).pack(padx=20, pady=(0, 20), anchor="w")
 

@@ -7,7 +7,7 @@ from config import COLORS, APP_NAME
 
 class LoginView(ctk.CTkFrame):
     def __init__(self, parent, on_login_success):
-        super().__init__(parent, fg_color="#000000")  # Pure black background
+        super().__init__(parent, fg_color=COLORS["dark"])  # Match app background
         self.on_login_success = on_login_success
         self.setup_ui()
     
@@ -20,24 +20,16 @@ class LoginView(ctk.CTkFrame):
         # Modern login card with gradient-like effect
         login_card = ctk.CTkFrame(
             main_container,
-            fg_color="#1a1a1a",
-            corner_radius=25,
+            fg_color=COLORS["card_bg"],
+            corner_radius=20,
             width=440,
             height=580,
-            border_width=1,
-            border_color="#2a2a2a"
+            border_width=0
         )
         login_card.pack()
         login_card.pack_propagate(False)
         
-        # Top accent bar
-        accent_bar = ctk.CTkFrame(
-            login_card,
-            fg_color=COLORS["primary"],
-            height=5,
-            corner_radius=25
-        )
-        accent_bar.pack(fill="x", padx=0, pady=0)
+        # Removed top accent bar for cleaner look
         
         # Logo/Icon area
         logo_frame = ctk.CTkFrame(login_card, fg_color="transparent")
@@ -148,23 +140,12 @@ class LoginView(ctk.CTkFrame):
         )
         self.error_label.pack()
         
-        # Bottom info - subtle
-        info_frame = ctk.CTkFrame(login_card, fg_color="#151515", corner_radius=12)
-        info_frame.pack(fill="x", padx=35, pady=(15, 25))
-        
-        info_label = ctk.CTkLabel(
-            info_frame,
-            text="Default Login\nAdmin: admin / admin123\nCashier: cashier / cashier123",
-            font=ctk.CTkFont(size=10),
-            text_color="#555555",
-            justify="center"
-        )
-        info_label.pack(pady=12)
+        # Removed default login info for cleaner look
         
         # Version/footer
         footer_label = ctk.CTkLabel(
             login_card,
-            text="v1.0.0 • Secure Login",
+            text="v1.0.0",
             font=ctk.CTkFont(size=9),
             text_color="#444444"
         )

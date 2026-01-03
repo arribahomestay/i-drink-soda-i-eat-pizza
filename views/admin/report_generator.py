@@ -59,9 +59,9 @@ class DetailedReportGenerator:
         # Process
         for txn in transactions:
             # Aggregate Order Type
-            o_type = txn[2] if len(txn) > 2 else "Normal"
-            if not o_type: o_type = "Normal"
-            if not o_type: o_type = "Normal"
+            o_type = txn[2] if len(txn) > 2 else "Regular"
+            if not o_type: o_type = "Regular"
+            if not o_type: o_type = "Regular"
             order_types[o_type] = order_types.get(o_type, 0) + 1
             
             # Aggregate Revenue
@@ -126,13 +126,45 @@ class DetailedReportGenerator:
                                      link_name, link_qty = mod_map[m_clean]
                                      ingredients_used[link_name] = ingredients_used.get(link_name, 0) + link_qty
 
+        # Fetch Inventory with Tracking Mode & Availability
+        try:
+             self.db.cursor.execute("""
+                SELECT name, category, stock, price, unit, use_stock_tracking, is_available 
+                FROM products 
+                ORDER BY category, name
+             """)
+        except:
+             # Fallback for schema safety
+             self.db.cursor.execute("SELECT name, category, stock, price, unit, 1, 1 FROM products ORDER BY category, name")
+             
+        inventory = self.db.cursor.fetchall()
+        
+        # Split Inventory
+        inv_stock = []
+        inv_avail = []
+        for item in inventory:
+             # item: name(0), cat(1), stock(2), price(3), unit(4), mode(5), avail(6)
+             mode = item[5] if len(item) > 5 and item[5] is not None else 1
+             if mode == 1:
+                 inv_stock.append(item)
+             else:
+                 inv_avail.append(item)
+
         # Generate Output
         filename = f"summary_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         
+        data = {
+            'products': products_sold, 
+            'addons': addons_sold, 
+            'ingredients': ingredients_used, 
+            'types': order_types, 
+            'total_revenue': total_revenue,
+            'inv_stock': inv_stock,
+            'inv_avail': inv_avail
+        }
+        
         if output_format == 'pdf':
-            return self._export_pdf(filename, 
-                {'products': products_sold, 'addons': addons_sold, 'ingredients': ingredients_used, 'types': order_types, 'total_revenue': total_revenue},
-                start_date, end_date)
+            return self._export_pdf(filename, data, start_date, end_date)
         
         path = f"{filename}.html"
         
@@ -148,6 +180,8 @@ class DetailedReportGenerator:
                 td {{ padding: 12px; border-bottom: 1px solid #ddd; }}
                 tr:nth-child(even) {{ background-color: #f9f9f9; }}
                 .section {{ margin-bottom: 40px; }}
+                .status-avail {{ color: green; font-weight: bold; }}
+                .status-unavail {{ color: red; font-weight: bold; }}
             </style>
         </head>
         <body>
@@ -186,8 +220,41 @@ class DetailedReportGenerator:
                     {''.join([f"<tr><td>{k}</td><td>{v}</td></tr>" for k,v in sorted(ingredients_used.items())])}
                 </table>
             </div>
+
+            <div class="section">
+                <h2>📦 Current Inventory (Stock Based)</h2>
+                <table>
+                    <tr>
+                        <th>Category</th>
+                        <th>Product Name</th>
+                        <th>Current Stock</th>
+                        <th>Price</th>
+                    </tr>
+                    {''.join([f"<tr><td>{item[1]}</td><td>{item[0]}</td><td>{int(item[2])} {item[4]}</td><td>{item[3]:.2f}</td></tr>" for item in inv_stock])}
+                </table>
+            </div>
+            
+            <div class="section">
+                <h2>🍽️ Product Availability (Made-to-Order)</h2>
+                <table>
+                    <tr>
+                        <th>Category</th>
+                        <th>Product Name</th>
+                        <th>Status</th>
+                        <th>Price</th>
+                    </tr>
+                    {''.join([f"<tr><td>{item[1]}</td><td>{item[0]}</td><td class='{'status-avail' if (str(item[6])=='1' or str(item[6])=='True') else 'status-unavail'}'>{'Available' if (str(item[6])=='1' or str(item[6])=='True') else 'Not Available'}</td><td>{item[3]:.2f}</td></tr>" for item in inv_avail])}
+                </table>
+            </div>
             
         </body>
+        
+        # Helper for Inventory PDF
+        def draw_inventory_stock_section(items):
+            if not items: return
+            # ... (Implementation in next block if needed, but I returned via PDF flow usually)
+
+
         </html>
         """
         
@@ -306,11 +373,117 @@ class DetailedReportGenerator:
             
             pdf.ln(10)  # Space between sections
 
-        # Draw all sections with emojis
+        # Helper for Stock Inventory
+        def draw_inv_stock(items):
+            if not items: return
+            
+            pdf.set_font("Helvetica", 'B', 14)
+            pdf.set_text_color(52, 73, 94)
+            pdf.cell(0, 10, "Current Inventory (Stock Based)", new_x="LMARGIN", new_y="NEXT")
+            pdf.ln(2)
+            
+            # Header
+            pdf.set_font("Helvetica", 'B', 10)
+            pdf.set_fill_color(39, 174, 96) # Green
+            pdf.set_text_color(255, 255, 255)
+            pdf.set_draw_color(39, 174, 96)
+            
+            pdf.cell(70, 8, "Product Name", 1, 0, 'L', True)
+            pdf.cell(40, 8, "Category", 1, 0, 'L', True)
+            pdf.cell(40, 8, "Stock", 1, 0, 'C', True)
+            pdf.cell(40, 8, "Price", 1, 1, 'R', True) 
+            
+            # Rows
+            pdf.set_font("Helvetica", '', 9)
+            pdf.set_text_color(44, 62, 80)
+            pdf.set_draw_color(189, 195, 199)
+            
+            for i, item in enumerate(items):
+                # item: name, cat, stock, price, unit
+                name, cat, stock, price, unit = item[0], item[1], item[2], item[3], item[4]
+                
+                if i % 2 == 1: pdf.set_fill_color(245, 245, 245)
+                else: pdf.set_fill_color(255, 255, 255)
+                
+                name_clean = str(name).encode('latin-1', 'replace').decode('latin-1')[:35]
+                cat_clean = str(cat).encode('latin-1', 'replace').decode('latin-1')[:18]
+                
+                pdf.cell(70, 7, f" {name_clean}", 1, 0, 'L', True)
+                pdf.cell(40, 7, f" {cat_clean}", 1, 0, 'L', True)
+                
+                # Integer Stock Force
+                try:
+                    s_int = int(stock)
+                except:
+                    s_int = 0
+                pdf.cell(40, 7, f" {s_int} {unit}", 1, 0, 'C', True)
+                
+                pdf.cell(40, 7, f"{price:,.2f}", 1, 1, 'R', True)
+            pdf.ln(8)
+
+        # Helper for Made to Order
+        def draw_inv_avail(items):
+            if not items: return
+            
+            pdf.set_font("Helvetica", 'B', 14)
+            pdf.set_text_color(52, 73, 94)
+            pdf.cell(0, 10, "Product Availability (Made-to-Order)", new_x="LMARGIN", new_y="NEXT")
+            pdf.ln(2)
+            
+            # Header
+            pdf.set_font("Helvetica", 'B', 10)
+            pdf.set_fill_color(41, 128, 185) # Blue header
+            pdf.set_text_color(255, 255, 255)
+            pdf.set_draw_color(41, 128, 185)
+            
+            pdf.cell(70, 8, "Product Name", 1, 0, 'L', True)
+            pdf.cell(50, 8, "Category", 1, 0, 'L', True)
+            pdf.cell(30, 8, "Status", 1, 0, 'C', True)
+            pdf.cell(40, 8, "Price", 1, 1, 'R', True) 
+            
+            # Rows
+            pdf.set_font("Helvetica", '', 9)
+            pdf.set_text_color(44, 62, 80)
+            
+            for i, item in enumerate(items):
+                # item: name, cat, stock, price, unit, mode, avail
+                name, cat, price = item[0], item[1], item[3]
+                avail = item[6]
+                
+                if i % 2 == 1: pdf.set_fill_color(245, 245, 245)
+                else: pdf.set_fill_color(255, 255, 255)
+                
+                name_clean = str(name).encode('latin-1', 'replace').decode('latin-1')[:35]
+                cat_clean = str(cat).encode('latin-1', 'replace').decode('latin-1')[:20]
+                
+                pdf.cell(70, 7, f" {name_clean}", 1, 0, 'L', True)
+                pdf.cell(50, 7, f" {cat_clean}", 1, 0, 'L', True)
+                
+                # Status
+                pdf.set_font("Helvetica", 'B', 9)
+                is_avail = (str(avail)=='1' or str(avail)=='True')
+                status_txt = "Available" if is_avail else "Not Available"
+                
+                if is_avail: pdf.set_text_color(39, 174, 96)
+                else: pdf.set_text_color(192, 57, 43)
+                
+                pdf.cell(30, 7, status_txt, 1, 0, 'C', True)
+                
+                pdf.set_text_color(44, 62, 80) # Reset
+                pdf.set_font("Helvetica", '', 9)
+                
+                pdf.cell(40, 7, f"{price:,.2f}", 1, 1, 'R', True)
+            pdf.ln(8)
+
+        # Draw all sections
         draw_section("Order Types", data.get('types', {}), "")
         draw_section("Sold Items (Products)", data.get('products', {}), "")
         draw_section("Sold Add-ons (Modifiers)", data.get('addons', {}), "")
         draw_section("Ingredients Used", data.get('ingredients', {}), "")
+        
+        # Render separated inventory
+        draw_inv_stock(data.get('inv_stock', []))
+        draw_inv_avail(data.get('inv_avail', []))
         
         # Footer note
         pdf.ln(5)

@@ -28,10 +28,13 @@ class POSApplication(ctk.CTk):
         ctk.set_appearance_mode(THEME_MODE)
         ctk.set_default_color_theme(COLOR_THEME)
         
+        # Set window background to gray (not black)
+        self.configure(fg_color=COLORS["dark"])
+        
         # Initialize database
         self.database = Database()
         
-        # Current user
+        # Current user #initialize datbaese
         self.current_user = None
         
         # Current view
@@ -66,6 +69,11 @@ class POSApplication(ctk.CTk):
         user = self.database.authenticate_user(username, password)
         
         if user:
+            # Check for deactivation
+            if "error" in user and user["error"] == "deactivated":
+                messagebox.showerror("Account Deactivated", "Deactivated account contact admin")
+                return
+                
             self.current_user = user
             
             # Show appropriate view based on role
@@ -120,6 +128,10 @@ class POSApplication(ctk.CTk):
         """Handle user logout"""
         if messagebox.askyesno("Logout", "Are you sure you want to logout?"):
             self.current_user = None
+            
+            # Exit fullscreen/maximized state if active
+            self.attributes('-fullscreen', False)
+            self.state('normal')
             
             # Reset minimum size first
             self.minsize(1, 1)

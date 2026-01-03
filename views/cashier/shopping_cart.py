@@ -39,7 +39,7 @@ class ShoppingCart:
         order_type_frame.pack(fill="x", padx=20, pady=(0, 10))
         
         # Order type state
-        self.order_type = "Normal"  # Default: Normal, Dine In, Take Out
+        self.order_type = "Regular"  # Default: Regular, Dine In, Take Out
         
         # Order type label
         ctk.CTkLabel(
@@ -55,8 +55,8 @@ class ShoppingCart:
         
         self.normal_btn = ctk.CTkButton(
             btn_container,
-            text="Normal",
-            command=lambda: self.set_order_type("Normal"),
+            text="Regular",
+            command=lambda: self.set_order_type("Regular"),
             height=30,
             width=90,
             font=ctk.CTkFont(size=11, weight="bold"),
@@ -180,8 +180,31 @@ class ShoppingCart:
         return right_panel
     
     def add_item(self, item):
-        """Add item to cart"""
-        self.cart_items.append(item)
+        """Add item to cart, strictly merging duplicates"""
+        # Search for identical item in cart
+        found = False
+        for existing_item in self.cart_items:
+            # Check for exact match of product, variant, and modifiers
+            # Use .get() with None default to handle missing keys safely
+            same_product = existing_item.get('product_id') == item.get('product_id')
+            same_variant = existing_item.get('variant_id') == item.get('variant_id')
+            
+            # Handle modifiers comparison (could be list, string, or None)
+            mods1 = existing_item.get('modifiers', [])
+            mods2 = item.get('modifiers', [])
+            # Normalize to strings if needed or just compare
+            same_modifiers = str(mods1) == str(mods2)
+            
+            if same_product and same_variant and same_modifiers:
+                # Merge: Update quantity and subtotal
+                existing_item['quantity'] += item.get('quantity', 1)
+                existing_item['subtotal'] = existing_item['quantity'] * existing_item['price']
+                found = True
+                break
+        
+        if not found:
+            self.cart_items.append(item)
+            
         self.update_cart_display()
     
     def remove_item(self, item):
@@ -326,7 +349,7 @@ class ShoppingCart:
         self.order_type = order_type
         
         # Update button colors to show selection
-        if order_type == "Normal":
+        if order_type == "Regular":
             self.normal_btn.configure(fg_color=COLORS["primary"])
             self.dinein_btn.configure(fg_color=COLORS["card_bg"])
             self.takeout_btn.configure(fg_color=COLORS["card_bg"])

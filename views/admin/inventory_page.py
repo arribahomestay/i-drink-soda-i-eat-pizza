@@ -96,21 +96,41 @@ class InventoryPage:
             self.show_suppliers()
     
     def show_inventory_overview(self):
-        """Show inventory overview"""
+        """Show inventory overview with caching optimization"""
+        from datetime import datetime
+        
         # Stats cards
         stats_frame = ctk.CTkFrame(self.inventory_content, fg_color="transparent")
         stats_frame.pack(fill="x", padx=20, pady=20)
         
-        # Get inventory data
-        # Get inventory data
-        all_products = self.database.get_all_products()
+        # Get inventory data with caching
+        if not hasattr(self, '_inventory_cache') or not hasattr(self, '_inventory_cache_time'):
+            self._inventory_cache = {
+                'products': self.database.get_all_products(),
+                'low_stock': self.database.get_low_stock_products(10),
+                'out_of_stock': self.database.get_out_of_stock_products(),
+                'inventory_value': self.database.get_inventory_value()
+            }
+            self._inventory_cache_time = datetime.now()
+        else:
+            # Refresh cache if older than 30 seconds
+            if (datetime.now() - self._inventory_cache_time).seconds > 30:
+                self._inventory_cache = {
+                    'products': self.database.get_all_products(),
+                    'low_stock': self.database.get_low_stock_products(10),
+                    'out_of_stock': self.database.get_out_of_stock_products(),
+                    'inventory_value': self.database.get_inventory_value()
+                }
+                self._inventory_cache_time = datetime.now()
+        
+        all_products = self._inventory_cache['products']
+        low_stock = self._inventory_cache['low_stock']
+        out_of_stock = self._inventory_cache['out_of_stock']
+        inventory_value = self._inventory_cache['inventory_value']
+        
         # Filter for stock tracked only for the count
         # Indices: use_stock_tracking=12
         stock_tracked_products = [p for p in all_products if (len(p) > 12 and p[12] == 1)]
-        
-        low_stock = self.database.get_low_stock_products(10)
-        out_of_stock = self.database.get_out_of_stock_products()
-        inventory_value = self.database.get_inventory_value()
         
         stats = [
             ("Stock Items", len(stock_tracked_products), COLORS["info"]),
@@ -155,10 +175,20 @@ class InventoryPage:
         )
         adjustments_list.pack(fill="both", expand=True, padx=20, pady=(0, 20))
         
-        adjustments = self.database.get_stock_adjustments(limit=10)
+        # Cache adjustments separately
+        if not hasattr(self, '_adjustments_cache') or not hasattr(self, '_adjustments_cache_time'):
+            self._adjustments_cache = self.database.get_stock_adjustments(limit=20)
+            self._adjustments_cache_time = datetime.now()
+        else:
+            if (datetime.now() - self._adjustments_cache_time).seconds > 30:
+                self._adjustments_cache = self.database.get_stock_adjustments(limit=20)
+                self._adjustments_cache_time = datetime.now()
+        
+        adjustments = self._adjustments_cache
         
         if adjustments:
-            for adj in adjustments:
+            # Only show first 10 initially
+            for adj in adjustments[:10]:
                 card = ctk.CTkFrame(adjustments_list, fg_color=COLORS["card_bg"], corner_radius=8)
                 card.pack(fill="x", pady=5)
                 
@@ -187,9 +217,19 @@ class InventoryPage:
             ).pack(pady=20)
     
     def show_low_stock(self):
-        """Show low stock products - Compact Table Layout"""
-        # Get low stock products
-        low_stock_raw = self.database.get_low_stock_products(10)
+        """Show low stock products with lazy loading optimization"""
+        from datetime import datetime
+        
+        # Get low stock products with caching
+        if not hasattr(self, '_low_stock_cache') or not hasattr(self, '_low_stock_cache_time'):
+            self._low_stock_cache = self.database.get_low_stock_products(10)
+            self._low_stock_cache_time = datetime.now()
+        else:
+            if (datetime.now() - self._low_stock_cache_time).seconds > 30:
+                self._low_stock_cache = self.database.get_low_stock_products(10)
+                self._low_stock_cache_time = datetime.now()
+        
+        low_stock_raw = self._low_stock_cache
         
         # Filter for only stock-tracked items
         # Indices: use_stock_tracking=12
@@ -224,73 +264,126 @@ class InventoryPage:
         ctk.CTkLabel(h_frame, text="Price", font=ctk.CTkFont(size=11, weight="bold"), text_color=COLORS["text_secondary"], width=80, anchor="w").pack(side="left", padx=(0, 10))
         ctk.CTkLabel(h_frame, text="Stock Level", font=ctk.CTkFont(size=11, weight="bold"), text_color=COLORS["text_secondary"], width=80, anchor="e").pack(side="right")
 
-        products_list = ctk.CTkScrollableFrame(
+        self.low_stock_list_frame = ctk.CTkScrollableFrame(
             self.inventory_content,
             fg_color="transparent",
             scrollbar_button_color=COLORS["primary"]
         )
-        products_list.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        self.low_stock_list_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
         
         if low_stock:
-            for product in low_stock:
-                # product: [id, name, ... , stock, ...]
-                
-                row = ctk.CTkFrame(products_list, fg_color=COLORS["card_bg"], corner_radius=5, height=35)
-                row.pack(fill="x", pady=2)
-                row.pack_propagate(False)
-                
-                content = ctk.CTkFrame(row, fg_color="transparent")
-                content.pack(fill="both", expand=True, padx=15, pady=5)
-                
-                # Name
-                ctk.CTkLabel(
-                    content,
-                    text=product[1],
-                    font=ctk.CTkFont(size=12, weight="bold"),
-                    text_color=COLORS["text_primary"],
-                    width=200,
-                    anchor="w"
-                ).pack(side="left", padx=(0, 10))
-                
-                # Category
-                ctk.CTkLabel(
-                    content,
-                    text=product[2],
-                    font=ctk.CTkFont(size=11),
-                    text_color=COLORS["text_secondary"],
-                    width=120,
-                    anchor="w"
-                ).pack(side="left", padx=(0, 10))
-                
-                # Price
-                ctk.CTkLabel(
-                    content,
-                    text=f"{CURRENCY_SYMBOL}{product[3]:.2f}",
-                    font=ctk.CTkFont(size=11),
-                    text_color=COLORS["text_secondary"],
-                    width=80,
-                    anchor="w"
-                ).pack(side="left", padx=(0, 10))
-                
-                # Stock (Right aligned)
-                stock_val = product[4]
-                stock_color = COLORS["danger"] if stock_val == 0 else COLORS["warning"]
-                
-                ctk.CTkLabel(
-                    content,
-                    text=f"{stock_val}",
-                    font=ctk.CTkFont(size=12, weight="bold"),
-                    text_color=stock_color,
-                    width=80,
-                    anchor="e"
-                ).pack(side="right")
+            # OPTIMIZATION: Lazy loading with batch rendering
+            self._all_low_stock = low_stock
+            self._low_stock_rendered = 0
+            self._low_stock_batch = 20
+            
+            # Initial batch render
+            self._render_low_stock_batch()
+            
+            # Add "Load More" button if there are more products
+            if len(low_stock) > self._low_stock_batch:
+                load_more_btn = ctk.CTkButton(
+                    self.low_stock_list_frame,
+                    text=f"Load More ({len(low_stock) - self._low_stock_batch} remaining)",
+                    command=self._render_low_stock_batch,
+                    height=40,
+                    font=ctk.CTkFont(size=13, weight="bold"),
+                    fg_color=COLORS["primary"],
+                    hover_color=COLORS["secondary"]
+                )
+                load_more_btn.pack(pady=15, padx=20, fill="x")
+                self._low_stock_load_more_btn = load_more_btn
         else:
             ctk.CTkLabel(
-                products_list,
+                self.low_stock_list_frame,
                 text="✅ All tracked products have sufficient stock!",
                 font=ctk.CTkFont(size=14),
                 text_color=COLORS["success"]
             ).pack(pady=50)
+    
+    def _render_low_stock_batch(self):
+        """Render the next batch of low stock products"""
+        if not hasattr(self, '_all_low_stock'):
+            return
+        
+        products = self._all_low_stock
+        start_idx = self._low_stock_rendered
+        end_idx = min(start_idx + self._low_stock_batch, len(products))
+        
+        # Remove load more button if it exists
+        if hasattr(self, '_low_stock_load_more_btn') and self._low_stock_load_more_btn.winfo_exists():
+            self._low_stock_load_more_btn.destroy()
+        
+        # Render batch
+        for i in range(start_idx, end_idx):
+            product = products[i]
+            
+            row = ctk.CTkFrame(self.low_stock_list_frame, fg_color=COLORS["card_bg"], corner_radius=5, height=35)
+            row.pack(fill="x", pady=2)
+            row.pack_propagate(False)
+            
+            content = ctk.CTkFrame(row, fg_color="transparent")
+            content.pack(fill="both", expand=True, padx=15, pady=5)
+            
+            # Name
+            ctk.CTkLabel(
+                content,
+                text=product[1],
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color=COLORS["text_primary"],
+                width=200,
+                anchor="w"
+            ).pack(side="left", padx=(0, 10))
+            
+            # Category
+            ctk.CTkLabel(
+                content,
+                text=product[2],
+                font=ctk.CTkFont(size=11),
+                text_color=COLORS["text_secondary"],
+                width=120,
+                anchor="w"
+            ).pack(side="left", padx=(0, 10))
+            
+            # Price
+            ctk.CTkLabel(
+                content,
+                text=f"{CURRENCY_SYMBOL}{product[3]:.2f}",
+                font=ctk.CTkFont(size=11),
+                text_color=COLORS["text_secondary"],
+                width=80,
+                anchor="w"
+            ).pack(side="left", padx=(0, 10))
+            
+            # Stock (Right aligned)
+            stock_val = product[4]
+            stock_color = COLORS["danger"] if stock_val == 0 else COLORS["warning"]
+            
+            ctk.CTkLabel(
+                content,
+                text=f"{stock_val}",
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color=stock_color,
+                width=80,
+                anchor="e"
+            ).pack(side="right")
+        
+        self._low_stock_rendered = end_idx
+        
+        # Re-add load more button if there are still more products
+        remaining = len(products) - self._low_stock_rendered
+        if remaining > 0:
+            load_more_btn = ctk.CTkButton(
+                self.low_stock_list_frame,
+                text=f"Load More ({remaining} remaining)",
+                command=self._render_low_stock_batch,
+                height=40,
+                font=ctk.CTkFont(size=13, weight="bold"),
+                fg_color=COLORS["primary"],
+                hover_color=COLORS["secondary"]
+            )
+            load_more_btn.pack(pady=15, padx=20, fill="x")
+            self._low_stock_load_more_btn = load_more_btn
     
     def show_stock_in(self):
         """Show stock in interface for adding inventory"""

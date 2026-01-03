@@ -10,6 +10,11 @@ class TransactionsPage:
         self.parent = parent
         self.database = database
         
+        # Optimization: Reuse fonts to speed up rendering
+        self.f_reg = ctk.CTkFont(size=12)
+        self.f_bold = ctk.CTkFont(size=12, weight="bold")
+        self.f_head = ctk.CTkFont(size=12, weight="bold")
+        
     def format_date_mnl(self, date_str):
         """Convert UTC string to Manila Time (+8) string"""
         try:
@@ -151,7 +156,7 @@ class TransactionsPage:
         ctk.CTkLabel(right_badges, text=txn[6], font=ctk.CTkFont(size=12, weight="bold"), text_color=COLORS["success"]).pack(side="right", padx=(10, 0))
         
         # Order Type
-        order_type = txn[7] if txn[7] else "Normal"
+        order_type = txn[7] if txn[7] else "Regular"
         type_color = COLORS["info"] if order_type == "Dine In" else (COLORS["warning"] if order_type == "Take Out" else COLORS["text_secondary"])
         ctk.CTkLabel(right_badges, text=f"[{order_type}]", font=ctk.CTkFont(size=12, weight="bold"), text_color=type_color).pack(side="right")
 
@@ -336,7 +341,7 @@ class TransactionsPage:
                               activebackground=COLORS["primary"], activeforeground="white",
                               font=("Segoe UI", 10))
         
-        types = ["Normal", "Dine In", "Take Out"]
+        types = ["Regular", "Dine In", "Take Out"]
         type_menu.add_command(label="All Types", command=lambda: self.filter_by_order_type(None))
         type_menu.add_separator()
         for t in types:
@@ -566,7 +571,7 @@ class TransactionsPage:
             ctk.CTkLabel(
                 transactions_list,
                 text=h_text,
-                font=ctk.CTkFont(size=12, weight="bold"),
+                font=self.f_head, # Optimization
                 text_color=COLORS["text_secondary"]
             ).grid(row=0, column=idx, sticky="ew", padx=5, pady=(0, 10))
         
@@ -582,32 +587,32 @@ class TransactionsPage:
                 
                 # Ref (1)
                 ctk.CTkLabel(
-                    transactions_list, text=txn[1], font=ctk.CTkFont(size=12), text_color=COLORS["text_primary"]
+                    transactions_list, text=txn[1], font=self.f_reg, text_color=COLORS["text_primary"]
                 ).grid(row=row_idx, column=0, sticky="w", padx=5, pady=5)
                 
                 # Date (9)
                 date_str = self.format_date_mnl(txn[9])
                 ctk.CTkLabel(
-                    transactions_list, text=date_str, font=ctk.CTkFont(size=12)
+                    transactions_list, text=date_str, font=self.f_reg
                 ).grid(row=row_idx, column=1, sticky="w", padx=5, pady=5)
                 
                 # Cashier (10)
                 ctk.CTkLabel(
-                    transactions_list, text=txn[10], font=ctk.CTkFont(size=12)
+                    transactions_list, text=txn[10], font=self.f_reg
                 ).grid(row=row_idx, column=2, sticky="w", padx=5, pady=5)
                 
                 # Method (6)
                 ctk.CTkLabel(
-                    transactions_list, text=txn[6], font=ctk.CTkFont(size=12)
+                    transactions_list, text=txn[6], font=self.f_reg
                 ).grid(row=row_idx, column=3, sticky="w", padx=5, pady=5)
                 
                 # Order Type (7)
-                order_type = txn[7] if txn[7] else "Normal"
+                order_type = txn[7] if txn[7] else "Regular"
                 type_color = COLORS["info"] if order_type == "Dine In" else (COLORS["warning"] if order_type == "Take Out" else COLORS["text_secondary"])
                 ctk.CTkLabel(
                     transactions_list, 
                     text=f"• {order_type}", 
-                    font=ctk.CTkFont(size=12, weight="bold"),
+                    font=self.f_bold,
                     text_color=type_color
                 ).grid(row=row_idx, column=4, sticky="w", padx=5, pady=5)
                 
@@ -616,7 +621,7 @@ class TransactionsPage:
                 ctk.CTkLabel(
                     transactions_list,
                     text=f"{CURRENCY_SYMBOL}{display_total:.2f}",
-                    font=ctk.CTkFont(size=12, weight="bold"),
+                    font=self.f_bold, # Optimization
                     text_color=COLORS["success"]
                 ).grid(row=row_idx, column=5, sticky="e", padx=20, pady=5)
                 
@@ -670,7 +675,8 @@ class TransactionsPage:
             params.append(self.custom_start_date)
             params.append(self.custom_end_date)
         
-        query += " ORDER BY t.created_at DESC LIMIT 50"
+        # Limit to 30 for faster loading
+        query += " ORDER BY t.created_at DESC LIMIT 30"
         
         self.database.cursor.execute(query, params)
         return self.database.cursor.fetchall()

@@ -314,8 +314,9 @@ class CashierView(ctk.CTkFrame):
     
     
     def show_items(self):
-        """Show all items with stock levels and real-time search"""
+        """Show all items with stock levels and real-time search - OPTIMIZED"""
         from config import CURRENCY_SYMBOL
+        from datetime import datetime
         
         # Refresh product grid to show latest data
         self.product_grid.load_products()
@@ -412,14 +413,24 @@ class CashierView(ctk.CTkFrame):
         )
         list_frame.pack(fill="both", expand=True, padx=0, pady=0)
         
+        # Cache products for this dialog session
+        if not hasattr(self, '_cashier_products_cache') or not hasattr(self, '_cashier_products_cache_time'):
+            self._cashier_products_cache = self.database.get_all_products()
+            self._cashier_products_cache_time = datetime.now()
+        else:
+            # Refresh cache if older than 30 seconds
+            if (datetime.now() - self._cashier_products_cache_time).seconds > 30:
+                self._cashier_products_cache = self.database.get_all_products()
+                self._cashier_products_cache_time = datetime.now()
+        
         def display_products(search_term=""):
-            """Display products filtered by search term and tab"""
+            """Display products filtered by search term and tab - WITH LAZY LOADING"""
             # Clear existing items
             for widget in list_frame.winfo_children():
                 widget.destroy()
             
-            # Get all products
-            all_products = self.database.get_all_products()
+            # Use cached products
+            all_products = self._cashier_products_cache
             
             filtered_products = []
             
@@ -442,95 +453,100 @@ class CashierView(ctk.CTkFrame):
                         
                 filtered_products.append(p)
             
-            # Display products
+            # Display products with LAZY LOADING
             if filtered_products:
-                for product in filtered_products:
-                    # product: [id, name, category, price, stock, barcode, description, created_at, unit, cost, markup]
-                    product_name = product[1] if len(product) > 1 else "Unknown"
-                    category = product[2] if len(product) > 2 and product[2] else "Uncategorized"
-                    price = product[3] if len(product) > 3 else 0
-                    stock = product[4] if len(product) > 4 else 0
-                    
-                    # Determine stock status color
-                    # Indices: use_stock_tracking=12, is_available=13
-                    use_stock = product[12] if len(product) > 12 and product[12] is not None else 1
-                    is_avail = product[13] if len(product) > 13 and product[13] is not None else 1
-                    
-                    if use_stock == 0:
-                        # Availability mode (Made-to-order)
-                        if is_avail:
-                            stock_color = COLORS["success"]
-                            stock_text = "Available"
-                        else:
-                            stock_color = COLORS["danger"]
-                            stock_text = "Unavail"
-                    else:
-                        # Stock tracking mode
-                        if stock == 0:
-                            stock_color = COLORS["danger"]
-                            stock_text = "Out of Stock"
-                        elif stock <= 10:
-                            stock_color = "#ff9800"  # Orange
-                            stock_text = f"{stock} (Low)"
-                        else:
-                            stock_color = COLORS["success"]
-                            stock_text = str(stock)
-                    
-                    row = ctk.CTkFrame(list_frame, fg_color=COLORS["dark"], corner_radius=0, height=32)
-                    row.pack(fill="x", pady=1, padx=0)
-                    row.pack_propagate(False)
-                    
-                    row_content = ctk.CTkFrame(row, fg_color="transparent")
-                    row_content.pack(fill="both", expand=True, padx=15, pady=6)
-                    
-                    # Product name
-                    ctk.CTkLabel(
-                        row_content,
-                        text=product_name,
-                        font=ctk.CTkFont(size=11),
-                        text_color=COLORS["text_primary"],
-                        width=200,
-                        anchor="w"
-                    ).pack(side="left", padx=(0, 10))
-                    
-                    # Category
-                    ctk.CTkLabel(
-                        row_content,
-                        text=category,
-                        font=ctk.CTkFont(size=10),
-                        text_color=COLORS["text_secondary"],
-                        width=120,
-                        anchor="w"
-                    ).pack(side="left", padx=(0, 10))
-                    
-                    # Price
-                    ctk.CTkLabel(
-                        row_content,
-                        text=f"{CURRENCY_SYMBOL}{price:.2f}",
-                        font=ctk.CTkFont(size=10),
-                        text_color=COLORS["text_primary"],
-                        width=80,
-                        anchor="w"
-                    ).pack(side="left", padx=(0, 10))
-                    
-                    # Stock
-                    ctk.CTkLabel(
-                        row_content,
-                        text=stock_text,
-                        font=ctk.CTkFont(size=10, weight="bold"),
-                        text_color=stock_color,
-                        width=100,  
-                        anchor="w"
-                    ).pack(side="left")
+                # Store for lazy loading
+                dialog._filtered_products = filtered_products
+                dialog._rendered_count = 0
+                dialog._batch_size = 30
+                
+                # Initial batch
+                _render_product_batch()
+                
+                # Add load more button if needed
+                if len(filtered_products) > dialog._batch_size:
+                    load_more_btn = ctk.CTkButton(
+                        list_frame,
+                        text=f"Load More ({len(filtered_products) - dialog._batch_size} remaining)",
+                        command=_render_product_batch,
+                        height=35,
+                        font=ctk.CTkFont(size=12, weight="bold"),
+                        fg_color=COLORS["primary"],
+                        hover_color=COLORS["secondary"]
+                    )
+                    load_more_btn.pack(pady=10, padx=15, fill="x")
+                    dialog._load_more_btn = load_more_btn
             else:
                 ctk.CTkLabel(
                     list_frame,
-                    text="No products found in this category",
-                    font=ctk.CTkFont(size=14),
+                    text="No products found",
+                    font=ctk.CTkFont(size=13),
                     text_color=COLORS["text_secondary"]
-                ).pack(pady=50)
+                ).pack(pady=30)
         
-        # Bind search
+        def _render_product_batch():
+            """Render next batch of products"""
+            if not hasattr(dialog, '_filtered_products'):
+                return
+            
+            products = dialog._filtered_products
+            start_idx = dialog._rendered_count
+            end_idx = min(start_idx + dialog._batch_size, len(products))
+            
+            # Remove load more button
+            if hasattr(dialog, '_load_more_btn') and dialog._load_more_btn.winfo_exists():
+                dialog._load_more_btn.destroy()
+            
+            # Render batch
+            for i in range(start_idx, end_idx):
+                p = products[i]
+                
+                row = ctk.CTkFrame(list_frame, fg_color=COLORS["dark"] if i % 2 == 0 else "transparent", height=32)
+                row.pack(fill="x", pady=1)
+                row.pack_propagate(False)
+                
+                content = ctk.CTkFrame(row, fg_color="transparent")
+                content.pack(fill="both", expand=True, padx=15, pady=5)
+                
+                # Name
+                ctk.CTkLabel(content, text=p[1], font=ctk.CTkFont(size=11), text_color=COLORS["text_primary"], width=200, anchor="w").pack(side="left", padx=(0, 10))
+                
+                # Category
+                ctk.CTkLabel(content, text=p[2] or "-", font=ctk.CTkFont(size=10), text_color=COLORS["text_secondary"], width=120, anchor="w").pack(side="left", padx=(0, 10))
+                
+                # Price
+                ctk.CTkLabel(content, text=f"{CURRENCY_SYMBOL}{p[3]:.2f}", font=ctk.CTkFont(size=10), text_color=COLORS["text_secondary"], width=80, anchor="w").pack(side="left", padx=(0, 10))
+                
+                # Status
+                use_stock = p[12] if len(p) > 12 and p[12] is not None else 1
+                if use_stock == 1:
+                    stock_val = p[4]
+                    status_text = f"Stock: {stock_val}"
+                    status_color = COLORS["danger"] if stock_val == 0 else (COLORS["warning"] if stock_val < 10 else COLORS["success"])
+                else:
+                    is_avail = p[13] if len(p) > 13 and p[13] is not None else 1
+                    status_text = "Available" if is_avail else "Not Available"
+                    status_color = COLORS["success"] if is_avail else COLORS["danger"]
+                
+                ctk.CTkLabel(content, text=status_text, font=ctk.CTkFont(size=10, weight="bold"), text_color=status_color, width=80, anchor="w").pack(side="left")
+            
+            dialog._rendered_count = end_idx
+            
+            # Re-add load more button if needed
+            remaining = len(products) - dialog._rendered_count
+            if remaining > 0:
+                load_more_btn = ctk.CTkButton(
+                    list_frame,
+                    text=f"Load More ({remaining} remaining)",
+                    command=_render_product_batch,
+                    height=35,
+                    font=ctk.CTkFont(size=12, weight="bold"),
+                    fg_color=COLORS["primary"],
+                    hover_color=COLORS["secondary"]
+                )
+                load_more_btn.pack(pady=10, padx=15, fill="x")
+                dialog._load_more_btn = load_more_btn
+        
         def on_search(*args):
             display_products(search_entry.get())
         
@@ -590,14 +606,37 @@ class CashierView(ctk.CTkFrame):
         filter_btn_frame = ctk.CTkFrame(filter_frame, fg_color="transparent")
         filter_btn_frame.pack(side="left", padx=15, pady=10)
         
-        ctk.CTkLabel(
-            filter_btn_frame,
-            text="Filter:",
-            font=ctk.CTkFont(size=11, weight="bold"),
-            text_color=COLORS["text_secondary"]
-        ).pack(side="left", padx=(0, 10))
-        
         filter_var = ctk.StringVar(value="all")
+        
+        def on_filter_change():
+            refresh_data()
+        
+        def build_filter_ui():
+            for w in filter_btn_frame.winfo_children(): w.destroy()
+            
+            ctk.CTkLabel(
+                filter_btn_frame,
+                text="Filter:",
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color=COLORS["text_secondary"]
+            ).pack(side="left", padx=(0, 10))
+            
+            ctk.CTkRadioButton(
+                filter_btn_frame, text="All", variable=filter_var, value="all",
+                command=on_filter_change, width=50
+            ).pack(side="left", padx=5)
+            
+            ctk.CTkRadioButton(
+                filter_btn_frame, text="Today", variable=filter_var, value="today",
+                command=on_filter_change, width=70
+            ).pack(side="left", padx=5)
+            
+            ctk.CTkRadioButton(
+                filter_btn_frame, text="Yesterday", variable=filter_var, value="yesterday",
+                command=on_filter_change, width=90
+            ).pack(side="left", padx=5)
+            
+        build_filter_ui()
         
         # Summary display
         summary_frame = ctk.CTkFrame(filter_frame, fg_color="transparent")
@@ -605,6 +644,7 @@ class CashierView(ctk.CTkFrame):
         
         total_label = ctk.CTkLabel(
             summary_frame,
+            # ...
             text="Total Sales: ₱0.00",
             font=ctk.CTkFont(size=14, weight="bold"),
             text_color=COLORS["success"]
@@ -656,11 +696,14 @@ class CashierView(ctk.CTkFrame):
         def get_filtered_transactions():
             """Get transactions based on filter"""
             filter_type = filter_var.get()
-            all_txns = self.database.get_transactions_by_cashier(self.user_data['id'], limit=200)
+            # Fast Load: 50 limit for all, 150 for filters
+            limit = 50 if filter_type == "all" else 150
+            all_txns = self.database.get_transactions_by_cashier(self.user_data['id'], limit=limit)
             
             if filter_type == "all":
                 return all_txns
             
+            # Use Local Time (Manila/System)
             today = datetime.now().date()
             yesterday = today - timedelta(days=1)
             
@@ -668,7 +711,11 @@ class CashierView(ctk.CTkFrame):
             for txn in all_txns:
                 txn_date_str = txn[8] if len(txn) > 8 else ""
                 try:
-                    txn_date = datetime.strptime(txn_date_str, "%Y-%m-%d %H:%M:%S").date()
+                    dt = datetime.strptime(txn_date_str, "%Y-%m-%d %H:%M:%S")
+                    # Convert DB Time (UTC) to Local Time (+8h) to match user day
+                    dt += timedelta(hours=8)
+                    txn_date = dt.date()
+                    
                     if filter_type == "today" and txn_date == today:
                         filtered.append(txn)
                     elif filter_type == "yesterday" and txn_date == yesterday:
@@ -705,69 +752,52 @@ class CashierView(ctk.CTkFrame):
                 show_breakdown_tab(transactions)
         
         def show_transactions_tab(transactions):
-            """Show transactions list"""
-            # List header
-            list_header = ctk.CTkFrame(content_container, fg_color=COLORS["dark"], corner_radius=0, height=35)
-            list_header.pack(fill="x", padx=0, pady=0)
-            list_header.pack_propagate(False)
+            """Show transactions list - Ultra Compact & Fast"""
+            # Header
+            header_frame = ctk.CTkFrame(content_container, fg_color="transparent", height=25)
+            header_frame.pack(fill="x", pady=(3, 2), padx=8)
             
-            header_frame = ctk.CTkFrame(list_header, fg_color="transparent")
-            header_frame.pack(fill="both", expand=True, padx=15, pady=8)
+            # Simple Headers - smaller font
+            ctk.CTkLabel(header_frame, text="Time", font=ctk.CTkFont(size=10, weight="bold"), text_color=COLORS["text_secondary"], anchor="w", width=120).pack(side="left", padx=10)
+            ctk.CTkLabel(header_frame, text="Type", font=ctk.CTkFont(size=10, weight="bold"), text_color=COLORS["text_secondary"], anchor="w", width=80).pack(side="left", padx=5)
+            ctk.CTkLabel(header_frame, text="Total", font=ctk.CTkFont(size=10, weight="bold"), text_color=COLORS["text_secondary"], anchor="e", width=90).pack(side="right", padx=10)
             
-            ctk.CTkLabel(header_frame, text="Transaction #", font=ctk.CTkFont(size=10, weight="bold"), text_color=COLORS["text_secondary"], width=120, anchor="w").pack(side="left", padx=(0, 10))
-            ctk.CTkLabel(header_frame, text="Date & Time", font=ctk.CTkFont(size=10, weight="bold"), text_color=COLORS["text_secondary"], width=110, anchor="w").pack(side="left", padx=(0, 10))
-            ctk.CTkLabel(header_frame, text="Total", font=ctk.CTkFont(size=10, weight="bold"), text_color=COLORS["text_secondary"], width=70, anchor="w").pack(side="left", padx=(0, 10))
-            ctk.CTkLabel(header_frame, text="Payment", font=ctk.CTkFont(size=10, weight="bold"), text_color=COLORS["text_secondary"], width=60, anchor="w").pack(side="left", padx=(0, 10))
-            ctk.CTkLabel(header_frame, text="Type", font=ctk.CTkFont(size=10, weight="bold"), text_color=COLORS["text_secondary"], width=70, anchor="w").pack(side="left")
+            # Scrollable List
+            list_frame = ctk.CTkScrollableFrame(content_container, fg_color="transparent")
+            list_frame.pack(fill="both", expand=True)
             
-            # Scrollable list
-            list_frame = ctk.CTkScrollableFrame(content_container, fg_color="transparent", scrollbar_button_color=COLORS["primary"])
-            list_frame.pack(fill="both", expand=True, padx=0, pady=0)
+            if not transactions:
+                ctk.CTkLabel(list_frame, text="No transactions found", font=ctk.CTkFont(size=13), text_color=COLORS["text_secondary"]).pack(pady=40)
+                return
             
-            if transactions:
-                for txn in transactions:
-                    row = ctk.CTkFrame(list_frame, fg_color=COLORS["dark"], corner_radius=0, height=32)
-                    row.pack(fill="x", pady=1, padx=0)
-                    row.pack_propagate(False)
-                    
-                    content = ctk.CTkFrame(row, fg_color="transparent")
-                    content.pack(fill="both", expand=True, padx=15, pady=6)
-                    
-                    txn_number = txn[1] if len(txn) > 1 else "N/A"
-                    ctk.CTkLabel(content, text=txn_number, font=ctk.CTkFont(size=10), text_color=COLORS["text_primary"], width=120, anchor="w").pack(side="left", padx=(0, 10))
-                    
-                    # created_at is index 9 now with new query, but was 8. 
-                    # Let's check query again.
-                    # SELECT id, txn_num, cashier_id, total, tax, discount, payment, order_type, status, created_at
-                    # 0, 1, 2, 3, 4, 5, 6, 7, 8, 9
-                    
-                    created_at = txn[9] if len(txn) > 9 else "N/A"
-                    ctk.CTkLabel(content, text=created_at, font=ctk.CTkFont(size=10), text_color=COLORS["text_secondary"], width=110, anchor="w").pack(side="left", padx=(0, 10))
-                    
-                    total = txn[3] if len(txn) > 3 else 0
-                    ctk.CTkLabel(content, text=f"{CURRENCY_SYMBOL}{total:.2f}", font=ctk.CTkFont(size=10, weight="bold"), text_color=COLORS["success"], width=70, anchor="w").pack(side="left", padx=(0, 10))
-                    
-                    payment = txn[6] if len(txn) > 6 else "N/A"
-                    payment_icon = "💵" if payment == "Cash" else "📱"
-                    ctk.CTkLabel(content, text=f"{payment_icon} {payment}", font=ctk.CTkFont(size=10), text_color=COLORS["text_secondary"], width=60, anchor="w").pack(side="left", padx=(0, 10))
-                    
-                    # Order Type - index 7
-                    order_type = txn[7] if len(txn) > 7 else "Normal"
-                    if order_type is None: order_type = "Normal"
-                    
-                    if order_type == "Dine In":
-                        type_color = COLORS["info"]
-                        type_icon = "🍽️"
-                    elif order_type == "Take Out":
-                        type_color = COLORS["warning"]
-                        type_icon = "🥡"
-                    else:
-                        type_color = COLORS["text_secondary"]
-                        type_icon = "🛒"
-                    
-                    ctk.CTkLabel(content, text=f"{type_icon} {order_type}", font=ctk.CTkFont(size=9), text_color=type_color, width=70, anchor="w").pack(side="left")
-            else:
-                ctk.CTkLabel(list_frame, text="No transactions found", font=ctk.CTkFont(size=14), text_color=COLORS["text_secondary"]).pack(pady=50)
+            filter_mode = filter_var.get()
+            
+            for i, txn in enumerate(transactions):
+                row_color = COLORS["dark"] if i % 2 == 0 else "transparent"
+                
+                # Ultra Compact Row - no rounded corners, smaller height
+                row = ctk.CTkFrame(list_frame, fg_color=row_color, corner_radius=0, height=28)
+                row.pack(fill="x", pady=0, padx=3)
+                row.pack_propagate(False)
+                
+                created_at = txn[9] if len(txn) > 9 else ""
+                total = txn[3] if len(txn) > 3 else 0
+                order_type = txn[7] if len(txn) > 7 and txn[7] else "Regular"
+                
+                # Format Date/Time
+                display_time = created_at[11:16] # HH:MM
+                if filter_mode == "all":
+                    display_time = created_at[5:16] # MM-DD HH:MM
+                
+                # Col 1: Time - smaller font
+                ctk.CTkLabel(row, text=display_time, font=ctk.CTkFont(size=11), width=120, anchor="w").pack(side="left", padx=10)
+                
+                # Col 2: Type - smaller font
+                t_color = COLORS["info"] if order_type=="Dine In" else (COLORS["warning"] if order_type=="Take Out" else COLORS["text_secondary"])
+                ctk.CTkLabel(row, text=order_type, font=ctk.CTkFont(size=11, weight="bold"), text_color=t_color, width=80, anchor="w").pack(side="left", padx=5)
+                
+                # Col 3: Total - smaller font
+                ctk.CTkLabel(row, text=f"{CURRENCY_SYMBOL}{total:.2f}", font=ctk.CTkFont(size=11, weight="bold"), text_color=COLORS["success"], width=90, anchor="e").pack(side="right", padx=10)
         
         def show_breakdown_tab(transactions):
             """Show detailed sales breakdown"""

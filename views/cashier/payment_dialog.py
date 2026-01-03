@@ -11,7 +11,7 @@ from receipt_renderer import ReceiptRenderer
 
 
 class PaymentDialog:
-    def __init__(self, parent, database, user_data, cart_items, total, subtotal, tax, order_type="Normal"):
+    def __init__(self, parent, database, user_data, cart_items, total, subtotal, tax, order_type="Regular"):
         self.parent = parent
         self.database = database
         self.user_data = user_data
@@ -57,7 +57,7 @@ class PaymentDialog:
         ).pack(side="left")
         
         # Color based on order type
-        order_color = COLORS["primary"] if self.order_type == "Normal" else (COLORS["info"] if self.order_type == "Dine In" else COLORS["warning"])
+        order_color = COLORS["primary"] if self.order_type == "Regular" else (COLORS["info"] if self.order_type == "Dine In" else COLORS["warning"])
         
         ctk.CTkLabel(
             order_type_row,

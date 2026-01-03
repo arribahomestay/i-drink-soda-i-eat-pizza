@@ -53,7 +53,7 @@ class Database:
                 tax_amount REAL DEFAULT 0,
                 discount_amount REAL DEFAULT 0,
                 payment_method TEXT,
-                order_type TEXT DEFAULT 'Normal',
+                order_type TEXT DEFAULT 'Regular',
                 status TEXT DEFAULT 'completed',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (cashier_id) REFERENCES users(id)
@@ -277,7 +277,7 @@ class Database:
         
         # Migration: Add order_type to transactions
         try:
-            self.cursor.execute("ALTER TABLE transactions ADD COLUMN order_type TEXT DEFAULT 'Normal'")
+            self.cursor.execute("ALTER TABLE transactions ADD COLUMN order_type TEXT DEFAULT 'Regular'")
         except: pass
         
         # Product Prices table (Alternative Prices)
@@ -445,7 +445,7 @@ class Database:
             is_active = result[4] if len(result) > 4 and result[4] is not None else 1
             
             if not is_active:
-                return None  # User is deactivated
+                return {"error": "deactivated"}
             
             return {
                 "id": result[0],
@@ -654,10 +654,64 @@ class Database:
             )
         return self.cursor.fetchone()
     
+    def get_product_type_sales_count(self, start_date=None, end_date=None):
+        """Get sales count grouped by product type (stock tracking vs availability)"""
+        if start_date and end_date:
+            self.cursor.execute("""
+                SELECT p.use_stock_tracking, SUM(ti.quantity) as total_quantity
+                FROM transaction_items ti
+                JOIN products p ON ti.product_id = p.id
+                JOIN transactions t ON ti.transaction_id = t.id
+                WHERE DATE(t.created_at) BETWEEN ? AND ?
+                GROUP BY p.use_stock_tracking
+            """, (start_date, end_date))
+        else:
+            self.cursor.execute("""
+                SELECT p.use_stock_tracking, SUM(ti.quantity) as total_quantity
+                FROM transaction_items ti
+                JOIN products p ON ti.product_id = p.id
+                GROUP BY p.use_stock_tracking
+            """)
+        return self.cursor.fetchall()
+    
+    def get_transactions_by_date(self, start_date, end_date, limit=100):
+        """Get transactions within a date range"""
+        self.cursor.execute(
+            """SELECT t.id, t.transaction_number, t.cashier_id, t.total_amount, 
+                      t.tax_amount, t.discount_amount, t.payment_method, t.order_type,
+                      t.status, t.created_at, u.username as cashier_name 
+               FROM transactions t 
+               LEFT JOIN users u ON t.cashier_id = u.id 
+               WHERE DATE(t.created_at) BETWEEN ? AND ?
+               ORDER BY t.created_at DESC LIMIT ?""",
+            (start_date, end_date, limit)
+        )
+        return self.cursor.fetchall()
+    
     def get_all_users(self):
         """Get all users"""
-        self.cursor.execute("SELECT id, username, role, full_name, created_at FROM users ORDER BY created_at DESC")
+        # Ensure is_active column exists
+        try:
+            self.cursor.execute("SELECT is_active FROM users LIMIT 1")
+        except:
+            try:
+                self.cursor.execute("ALTER TABLE users ADD COLUMN is_active INTEGER DEFAULT 1")
+                self.conn.commit()
+            except: pass
+            
+        self.cursor.execute("SELECT id, username, role, full_name, created_at, is_active FROM users ORDER BY created_at DESC")
         return self.cursor.fetchall()
+
+    def update_user_status(self, user_id, is_active):
+        """Update user active status"""
+        self.cursor.execute("UPDATE users SET is_active = ? WHERE id = ?", (1 if is_active else 0, user_id))
+        self.conn.commit()
+
+    def get_user_by_username(self, username):
+        """Get user by username to check status"""
+        try: self.cursor.execute("SELECT id, username, role, full_name, is_active FROM users WHERE username = ?", (username,))
+        except: return None # Table/Column issue
+        return self.cursor.fetchone()
     
     def get_cashier_users(self):
         """Get all cashier users"""
@@ -788,7 +842,7 @@ class Database:
     # Enhanced transaction with payment details
     def add_transaction_with_payment(self, transaction_number, cashier_id, items, 
                                     payment_method, payment_amount, change_amount,
-                                    tax_rate=0, discount_amount=0, order_type="Normal"):
+                                    tax_rate=0, discount_amount=0, order_type="Regular"):
         """Add transaction with payment details"""
         # Calculate totals
         subtotal = sum(item['price'] * item['quantity'] for item in items)
@@ -1114,17 +1168,6 @@ class Database:
             ORDER BY category
         """)
         return self.cursor.fetchall()
-
-    def get_product_type_sales_count(self):
-        """Get total quantity sold split by stock tracking type"""
-        # Returns: [(use_stock_tracking, total_qty), ...]
-        self.cursor.execute("""
-            SELECT p.use_stock_tracking, SUM(ti.quantity)
-            FROM transaction_items ti
-            JOIN products p ON ti.product_id = p.id
-            GROUP BY p.use_stock_tracking
-        """)
-        return self.cursor.fetchall()
     
     
     # Receipt Settings
@@ -1156,6 +1199,122 @@ class Database:
             WHERE id = 1
         """, (name, address, phone, email, tax_rate, footer, logo_path, paper_width))
         self.conn.commit()
+    
+    # Analytics Methods for Dashboard
+    def get_top_selling_products(self, start_date=None, end_date=None, limit=10):
+        """Get top selling products by quantity and revenue"""
+        if start_date and end_date:
+            self.cursor.execute("""
+                SELECT p.name, SUM(ti.quantity) as total_qty, SUM(ti.subtotal) as total_revenue
+                FROM transaction_items ti
+                JOIN products p ON ti.product_id = p.id
+                JOIN transactions t ON ti.transaction_id = t.id
+                WHERE DATE(t.created_at) BETWEEN ? AND ?
+                GROUP BY ti.product_id, p.name
+                ORDER BY total_qty DESC
+                LIMIT ?
+            """, (start_date, end_date, limit))
+        else:
+            self.cursor.execute("""
+                SELECT p.name, SUM(ti.quantity) as total_qty, SUM(ti.subtotal) as total_revenue
+                FROM transaction_items ti
+                JOIN products p ON ti.product_id = p.id
+                GROUP BY ti.product_id, p.name
+                ORDER BY total_qty DESC
+                LIMIT ?
+            """, (limit,))
+        return self.cursor.fetchall()
+    
+    def get_payment_method_breakdown(self, start_date=None, end_date=None):
+        """Get breakdown of sales by payment method"""
+        if start_date and end_date:
+            self.cursor.execute("""
+                SELECT payment_method, SUM(total_amount) as total, COUNT(*) as count
+                FROM transactions
+                WHERE DATE(created_at) BETWEEN ? AND ?
+                GROUP BY payment_method
+                ORDER BY total DESC
+            """, (start_date, end_date))
+        else:
+            self.cursor.execute("""
+                SELECT payment_method, SUM(total_amount) as total, COUNT(*) as count
+                FROM transactions
+                GROUP BY payment_method
+                ORDER BY total DESC
+            """)
+        return self.cursor.fetchall()
+    
+    def get_order_type_breakdown(self, start_date=None, end_date=None):
+        """Get breakdown of sales by order type"""
+        if start_date and end_date:
+            self.cursor.execute("""
+                SELECT order_type, COUNT(*) as count, SUM(total_amount) as total
+                FROM transactions
+                WHERE DATE(created_at) BETWEEN ? AND ?
+                GROUP BY order_type
+                ORDER BY count DESC
+            """, (start_date, end_date))
+        else:
+            self.cursor.execute("""
+                SELECT order_type, COUNT(*) as count, SUM(total_amount) as total
+                FROM transactions
+                GROUP BY order_type
+                ORDER BY count DESC
+            """)
+        return self.cursor.fetchall()
+
+    def get_hourly_sales(self, start_date=None, end_date=None):
+        """Get sales aggregated by hour of the day"""
+        if start_date and end_date:
+            self.cursor.execute("""
+                SELECT 
+                    CAST(strftime('%H', created_at) AS INTEGER) as hour,
+                    SUM(total_amount) as total_sales,
+                    COUNT(*) as transaction_count
+                FROM transactions
+                WHERE DATE(created_at) BETWEEN ? AND ?
+                GROUP BY hour
+                ORDER BY total_sales DESC
+            """, (start_date, end_date))
+        else:
+            self.cursor.execute("""
+                SELECT 
+                    CAST(strftime('%H', created_at) AS INTEGER) as hour,
+                    SUM(total_amount) as total_sales,
+                    COUNT(*) as transaction_count
+                FROM transactions
+                GROUP BY hour
+                ORDER BY total_sales DESC
+            """)
+        return self.cursor.fetchall()
+
+    def get_category_performance(self, start_date=None, end_date=None):
+        """Get sales performance by product category"""
+        if start_date and end_date:
+            self.cursor.execute("""
+                SELECT 
+                    p.category,
+                    SUM(ti.subtotal) as total_sales,
+                    SUM(ti.quantity) as total_qty
+                FROM transaction_items ti
+                JOIN products p ON ti.product_id = p.id
+                JOIN transactions t ON ti.transaction_id = t.id
+                WHERE DATE(t.created_at) BETWEEN ? AND ?
+                GROUP BY p.category
+                ORDER BY total_sales DESC
+            """, (start_date, end_date))
+        else:
+            self.cursor.execute("""
+                SELECT 
+                    p.category,
+                    SUM(ti.subtotal) as total_sales,
+                    SUM(ti.quantity) as total_qty
+                FROM transaction_items ti
+                JOIN products p ON ti.product_id = p.id
+                GROUP BY p.category
+                ORDER BY total_sales DESC
+            """)
+        return self.cursor.fetchall()
 
     def close(self):
         """Close database connection"""

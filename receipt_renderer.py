@@ -81,8 +81,8 @@ class ReceiptRenderer:
         # Transaction Info
         # Date, Txn ID, Cashier (20x3 = 60)
         y += 60
-        # Add space for Order Type if not Normal
-        order_type_check = "Normal"
+        # Add space for Order Type if not Regular
+        order_type_check = "Regular"
         if not preview and transaction and len(transaction) > 10:
             order_type_check = transaction[10]
         elif preview:
@@ -223,7 +223,7 @@ class ReceiptRenderer:
                 
             # Use Full Name (Index 10) instead of Username (Index 9)
             cashier = transaction[10] if len(transaction) > 10 and transaction[10] else (transaction[9] if len(transaction) > 9 else "Cashier")
-            order_type = transaction[7] if len(transaction) > 7 else "Normal"
+            order_type = transaction[7] if len(transaction) > 7 else "Regular"
             
         draw_row(f"Date: {date_str}", "", self.font_mono, y)
         y += 20

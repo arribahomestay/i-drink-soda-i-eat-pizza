@@ -153,14 +153,19 @@ class UsersPage:
         if user[2] != "admin":
             fullname_label.bind("<Button-3>", lambda e: show_context_menu(e))
         
-        # Role
-        role_color = COLORS["warning"] if user[2] == "admin" else COLORS["info"]
+        # Role & Status
+        # Status - Index 5
+        is_active = user[5] if len(user) > 5 and user[5] is not None else 1
+        
+        status_text = " [DEACTIVATED]" if not is_active else ""
+        role_color = COLORS["text_secondary"] if not is_active else (COLORS["warning"] if user[2] == "admin" else COLORS["info"])
+        
         role_label = ctk.CTkLabel(
             row_content,
-            text=user[2].upper(),
+            text=f"{user[2].upper()}{status_text}",
             font=ctk.CTkFont(size=11, weight="bold"),
             text_color=role_color,
-            width=100
+            width=140
         )
         role_label.pack(side="left", padx=5)
         if user[2] != "admin":
@@ -184,6 +189,21 @@ class UsersPage:
         
         # Don't allow editing/deleting admin users
         if user[2] != "admin":
+            # Status Toggle
+            is_active = user[5] if len(user) > 5 and user[5] is not None else 1
+            
+            ctk.CTkButton(
+                actions_frame,
+                text="Disable" if is_active else "Enable",
+                command=lambda u=user: self.handle_toggle_status(u),
+                width=60,
+                height=25,
+                font=ctk.CTkFont(size=10),
+                fg_color=COLORS["warning"] if is_active else COLORS["success"],
+                hover_color="#e67e22" if is_active else "#27ae60",
+                corner_radius=5
+            ).pack(side="left", padx=2)
+
             edit_btn = ctk.CTkButton(
                 actions_frame,
                 text="Edit",
@@ -455,7 +475,22 @@ class UsersPage:
         # Bind Enter key
         password_entry.bind("<Return>", lambda e: save())
         fullname_entry.bind("<Return>", lambda e: save())
-    
+
+    def handle_toggle_status(self, user):
+        """Toggle user activation status"""
+        user_id = user[0]
+        current_status = user[5] if len(user) > 5 and user[5] is not None else 1
+        new_status = 0 if current_status else 1
+        action = "Deactivate" if current_status else "Activate"
+        
+        if messagebox.askyesno(f"Confirm {action}", f"Are you sure you want to {action.lower()} user '{user[1]}'?"):
+            try:
+                self.database.update_user_status(user_id, new_status)
+                messagebox.showinfo("Success", f"User '{user[1]}' {action.lower()}d successfully!")
+                self.switch_page("users")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to update status: {str(e)}")
+                
     def delete_user(self, user):
         """Delete a user"""
         if messagebox.askyesno("Confirm Delete", f"Are you sure you want to delete user '{user[1]}'?\n\nThis action cannot be undone."):

@@ -13,7 +13,9 @@ class HistoryPage:
         self.database = database
     
     def show(self):
-        """Show activity history page"""
+        """Show activity history page with lazy loading optimization"""
+        from datetime import datetime
+        
         # Clear existing content first
         for widget in self.parent.winfo_children():
             widget.destroy()
@@ -34,7 +36,7 @@ class HistoryPage:
         refresh_btn = ctk.CTkButton(
             header,
             text="🔄 Refresh",
-            command=self.show,
+            command=self._force_refresh,
             height=35,
             width=100,
             font=ctk.CTkFont(size=12, weight="bold"),
@@ -93,26 +95,96 @@ class HistoryPage:
         ).pack(side="left", fill="x", expand=True)
         
         # Activity list
-        activities_list = ctk.CTkScrollableFrame(
+        self.activities_list_frame = ctk.CTkScrollableFrame(
             main_container,
             fg_color="transparent",
             scrollbar_button_color=COLORS["primary"]
         )
-        activities_list.pack(fill="both", expand=True, padx=0, pady=0)
+        self.activities_list_frame.pack(fill="both", expand=True, padx=0, pady=0)
         
-        # Get activity logs from database
-        activities = self.database.get_activity_logs(limit=200)
+        # Get activity logs from database with caching
+        if not hasattr(self, '_activities_cache') or not hasattr(self, '_cache_time'):
+            self._activities_cache = self.database.get_activity_logs(limit=500)
+            self._cache_time = datetime.now()
+        else:
+            # Refresh cache if older than 30 seconds
+            if (datetime.now() - self._cache_time).seconds > 30:
+                self._activities_cache = self.database.get_activity_logs(limit=500)
+                self._cache_time = datetime.now()
+        
+        activities = self._activities_cache
         
         if activities:
-            for activity in activities:
-                self.create_activity_row(activities_list, activity)
+            # OPTIMIZATION: Lazy loading with batch rendering
+            self._all_activities = activities
+            self._rendered_count = 0
+            self._batch_size = 20  # Render 20 activities at a time
+            
+            # Initial batch render
+            self._render_next_batch()
+            
+            # Add "Load More" button if there are more activities
+            if len(activities) > self._batch_size:
+                load_more_btn = ctk.CTkButton(
+                    self.activities_list_frame,
+                    text=f"Load More ({len(activities) - self._batch_size} remaining)",
+                    command=self._render_next_batch,
+                    height=40,
+                    font=ctk.CTkFont(size=13, weight="bold"),
+                    fg_color=COLORS["primary"],
+                    hover_color=COLORS["secondary"]
+                )
+                load_more_btn.pack(pady=15, padx=20, fill="x")
+                self._load_more_btn = load_more_btn
         else:
             ctk.CTkLabel(
-                activities_list,
+                self.activities_list_frame,
                 text="No activity logs found",
                 font=ctk.CTkFont(size=14),
                 text_color=COLORS["text_secondary"]
             ).pack(pady=50)
+    
+    def _render_next_batch(self):
+        """Render the next batch of activities"""
+        if not hasattr(self, '_all_activities'):
+            return
+        
+        activities = self._all_activities
+        start_idx = self._rendered_count
+        end_idx = min(start_idx + self._batch_size, len(activities))
+        
+        # Remove load more button if it exists
+        if hasattr(self, '_load_more_btn') and self._load_more_btn.winfo_exists():
+            self._load_more_btn.destroy()
+        
+        # Render batch
+        for i in range(start_idx, end_idx):
+            self.create_activity_row(self.activities_list_frame, activities[i])
+        
+        self._rendered_count = end_idx
+        
+        # Re-add load more button if there are still more activities
+        remaining = len(activities) - self._rendered_count
+        if remaining > 0:
+            load_more_btn = ctk.CTkButton(
+                self.activities_list_frame,
+                text=f"Load More ({remaining} remaining)",
+                command=self._render_next_batch,
+                height=40,
+                font=ctk.CTkFont(size=13, weight="bold"),
+                fg_color=COLORS["primary"],
+                hover_color=COLORS["secondary"]
+            )
+            load_more_btn.pack(pady=15, padx=20, fill="x")
+            self._load_more_btn = load_more_btn
+    
+    def _force_refresh(self):
+        """Force refresh by invalidating cache"""
+        if hasattr(self, '_activities_cache'):
+            delattr(self, '_activities_cache')
+        if hasattr(self, '_cache_time'):
+            delattr(self, '_cache_time')
+        self.show()
     
     def create_activity_row(self, parent, activity):
         """Create a row for an activity log entry"""
@@ -218,7 +290,7 @@ class HistoryPage:
                     order_type_color = COLORS["info"]
                 elif "Take Out" in order_type:
                     order_type_color = COLORS["warning"]
-                elif "Normal" in order_type:
+                elif "Regular" in order_type:
                     order_type_color = COLORS["text_secondary"]
                 
                 ctk.CTkLabel(
