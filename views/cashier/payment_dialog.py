@@ -66,6 +66,26 @@ class PaymentDialog:
             text_color=order_color
         ).pack(side="right")
         
+        # Customer Name (Optional)
+        customer_row = ctk.CTkFrame(summary_frame, fg_color="transparent")
+        customer_row.pack(fill="x", padx=20, pady=(5, 5))
+        
+        ctk.CTkLabel(
+            customer_row,
+            text="Customer:",
+            font=ctk.CTkFont(size=13),
+            text_color=COLORS["text_secondary"]
+        ).pack(side="left", anchor="w")
+        
+        customer_entry = ctk.CTkEntry(
+            customer_row,
+            placeholder_text="Optional",
+            height=28,
+            width=150,
+            font=ctk.CTkFont(size=12)
+        )
+        customer_entry.pack(side="right")
+        
         ctk.CTkLabel(
             summary_frame,
             text=f"Subtotal: {CURRENCY_SYMBOL}{self.subtotal:.2f}",
@@ -214,6 +234,8 @@ class PaymentDialog:
                 transaction_number = f"TXN{datetime.now().strftime('%Y%m%d%H%M%S')}"
                 
                 # Save transaction
+                customer_name = customer_entry.get().strip() or None
+
                 transaction_id = self.database.add_transaction_with_payment(
                     transaction_number=transaction_number,
                     cashier_id=self.user_data['id'],
@@ -222,7 +244,8 @@ class PaymentDialog:
                     payment_amount=tendered,
                     change_amount=change,
                     tax_rate=TAX_RATE * 100,
-                    order_type=self.order_type  # Pass order type
+                    order_type=self.order_type,  # Pass order type
+                    customer_name=customer_name
                 )
                 
                 # Generate receipt
@@ -234,7 +257,8 @@ class PaymentDialog:
                     transaction_id, transaction_number, self.user_data['id'],
                     self.total, self.tax, 0, method, self.order_type,
                     datetime.now().strftime('%Y-%m-%d %H:%M:%S'), self.user_data.get('username', 'Cashier'),
-                    self.user_data.get('full_name', 'Cashier'), tendered, change
+                    self.user_data.get('full_name', 'Cashier'), tendered, change,
+                    customer_name
                 ]
                 
                 

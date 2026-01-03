@@ -236,6 +236,18 @@ class ReceiptRenderer:
              draw_row(f"Type: {order_type.upper()}", "", self.font_bold, y) # Bold for emphasis
              y += 20
         
+        # Customer Name
+        customer_name = None
+        if len(transaction) > 13:
+             customer_name = transaction[13] # t_dummy from payment_dialog
+        elif len(transaction) > 11 and len(transaction) < 13:
+             # From get_transactions (DB has 12 columns, index 11 is customer_name)
+             customer_name = transaction[11]
+             
+        if customer_name:
+             draw_row(f"Customer: {customer_name}", "", self.font_mono, y)
+             y += 20
+        
         # Divider
         draw.line([(self.padding, y + 10), (width - self.padding, y + 10)], fill="black", width=1)
         y += 20

@@ -741,8 +741,8 @@ class ProductsPage:
     def create_product_card(self, parent, product):
         """Create a simple list item (minimal styling for fast loading)"""
         # Simple row container with minimal styling
-        card = ctk.CTkFrame(parent, fg_color=COLORS["card_bg"], corner_radius=0, height=35, border_width=1, border_color=COLORS["dark"])
-        card.pack(fill="x", pady=1, padx=0)
+        card = ctk.CTkFrame(parent, fg_color=COLORS["card_bg"], corner_radius=5, height=60, border_width=1, border_color=COLORS["dark"])
+        card.pack(fill="x", pady=2, padx=0)
         card.pack_propagate(False)
         
         # Add right-click context menu
@@ -769,11 +769,11 @@ class ProductsPage:
         name_label = ctk.CTkLabel(
             left_frame, 
             text=product[1], 
-            font=ctk.CTkFont(size=12),
+            font=ctk.CTkFont(size=16, weight="bold"),
             text_color=COLORS["text_primary"], 
             anchor="w"
         )
-        name_label.pack(side="left", padx=(0, 15))
+        name_label.pack(side="left", padx=(0, 20))
         name_label.bind("<Button-3>", show_product_menu)
         
         # Category (simple text, no badge)
@@ -781,11 +781,11 @@ class ProductsPage:
             cat_label = ctk.CTkLabel(
                 left_frame, 
                 text=f"[{product[2]}]", 
-                font=ctk.CTkFont(size=10),
+                font=ctk.CTkFont(size=12),
                 text_color=COLORS["text_secondary"], 
                 anchor="w"
             )
-            cat_label.pack(side="left", padx=(0, 10))
+            cat_label.pack(side="left", padx=(0, 15))
             cat_label.bind("<Button-3>", show_product_menu)
         
         # Barcode (simple text)
@@ -836,49 +836,49 @@ class ProductsPage:
         stock_label = ctk.CTkLabel(
              right_frame, 
              text=stock_text, 
-             font=ctk.CTkFont(size=10),
+             font=ctk.CTkFont(size=13),
              text_color=stock_color,
              anchor="e"
         )
-        stock_label.pack(side="left", padx=(0, 15))
+        stock_label.pack(side="left", padx=(0, 20))
         stock_label.bind("<Button-3>", show_product_menu)
 
         # Price (simple text)
         price_label = ctk.CTkLabel(
             right_frame, 
             text=f"{CURRENCY_SYMBOL}{product[3]:.2f}",
-            font=ctk.CTkFont(size=11),
+            font=ctk.CTkFont(size=15, weight="bold"),
             text_color=COLORS["success"]
         )
-        price_label.pack(side="left", padx=(0, 10))
+        price_label.pack(side="left", padx=(0, 15))
         price_label.bind("<Button-3>", show_product_menu)
         
         # Actions (simple buttons)
         edit_btn = ctk.CTkButton(
             right_frame, 
             text="Edit", 
-            width=50, 
-            height=24,
+            width=70, 
+            height=35,
             command=lambda p=product: self.edit_product_dialog(p),
-            font=ctk.CTkFont(size=10), 
+            font=ctk.CTkFont(size=12, weight="bold"), 
             fg_color=COLORS["primary"],
             hover_color=COLORS["secondary"], 
-            corner_radius=3
+            corner_radius=6
         )
-        edit_btn.pack(side="left", padx=2)
+        edit_btn.pack(side="left", padx=3)
         
         del_btn = ctk.CTkButton(
             right_frame, 
             text="Del", 
-            width=50, 
-            height=24,
+            width=60, 
+            height=35,
             command=lambda p=product: self.delete_product(p),
-            font=ctk.CTkFont(size=10), 
+            font=ctk.CTkFont(size=12, weight="bold"), 
             fg_color=COLORS["danger"],
             hover_color="#c0392b", 
-            corner_radius=3
+            corner_radius=6
         )
-        del_btn.pack(side="left", padx=2)
+        del_btn.pack(side="left", padx=3)
     
     def search_categories(self, *args):
         """Filter categories based on search input"""

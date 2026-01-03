@@ -280,6 +280,11 @@ class Database:
             self.cursor.execute("ALTER TABLE transactions ADD COLUMN order_type TEXT DEFAULT 'Regular'")
         except: pass
         
+        # Migration: Add customer_name to transactions
+        try:
+            self.cursor.execute("ALTER TABLE transactions ADD COLUMN customer_name TEXT")
+        except: pass
+        
         # Product Prices table (Alternative Prices)
         self.cursor.execute('''
             CREATE TABLE IF NOT EXISTS product_prices (
@@ -589,7 +594,7 @@ class Database:
         self.cursor.execute(
             """SELECT t.id, t.transaction_number, t.cashier_id, t.total_amount, 
                       t.tax_amount, t.discount_amount, t.payment_method, t.order_type,
-                      t.status, t.created_at, u.username as cashier_name 
+                      t.status, t.created_at, u.username as cashier_name, t.customer_name
                FROM transactions t 
                LEFT JOIN users u ON t.cashier_id = u.id 
                ORDER BY t.created_at DESC LIMIT ?""",
@@ -842,7 +847,7 @@ class Database:
     # Enhanced transaction with payment details
     def add_transaction_with_payment(self, transaction_number, cashier_id, items, 
                                     payment_method, payment_amount, change_amount,
-                                    tax_rate=0, discount_amount=0, order_type="Regular"):
+                                    tax_rate=0, discount_amount=0, order_type="Regular", customer_name=None):
         """Add transaction with payment details"""
         # Calculate totals
         subtotal = sum(item['price'] * item['quantity'] for item in items)
@@ -853,9 +858,9 @@ class Database:
         self.cursor.execute("""
             INSERT INTO transactions 
             (transaction_number, cashier_id, total_amount, tax_amount, 
-             discount_amount, payment_method, order_type, status, payment_amount, change_amount)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?)
-        """, (transaction_number, cashier_id, total, tax_amount, discount_amount, payment_method, order_type, payment_amount, change_amount))
+             discount_amount, payment_method, order_type, customer_name, status, payment_amount, change_amount)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?)
+        """, (transaction_number, cashier_id, total, tax_amount, discount_amount, payment_method, order_type, customer_name, payment_amount, change_amount))
         
         transaction_id = self.cursor.lastrowid
         
