@@ -13,3 +13,8 @@ ENV/
 inventory_report_*.html
 receipts/
 RCP_*.png
+
+# PyInstaller
+dist/
+build/
+*.spec

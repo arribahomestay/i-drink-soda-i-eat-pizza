@@ -1384,6 +1384,7 @@ class ProductsPage:
                 if close_after:
                     messagebox.showinfo("Success", "Product added!")
                     dialog.destroy()
+                    self._invalidate_cache()
                     self.switch_page("products")
                 else:
                     clear_fields(); dialog.title("✓ Added - Add Another"); dialog.after(1500, lambda: dialog.title("Add Product"))
@@ -2185,6 +2186,7 @@ class ProductsPage:
                     unit_var.get(), float(cost_entry.get() or 0), float(markup_entry.get() or 0),
                     supplier_id=supp_id, use_stock_tracking=use_stock_tracking, is_available=is_available
                 )
+                self._invalidate_cache()
                 messagebox.showinfo("Success", "Updated!"); dialog.destroy(); self.switch_page("products")
             except Exception as e: messagebox.showerror("Error", str(e))
 
@@ -2201,6 +2203,7 @@ class ProductsPage:
             try:
                 self.database.delete_product(product[0])
                 messagebox.showinfo("Success", "Product deleted successfully!")
+                self._invalidate_cache()
                 self.switch_page("products")
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to delete product: {str(e)}")
@@ -2368,6 +2371,7 @@ class ProductsPage:
                 )
                 messagebox.showinfo("Success", f"Product renamed to '{new_name}'")
                 dialog.destroy()
+                self._invalidate_cache()
                 self.switch_page("products")
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to rename: {str(e)}")
